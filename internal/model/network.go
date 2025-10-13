@@ -29,13 +29,12 @@ type RSSTorrent struct {
 	Name string `xml:"title"`
 	Link string `xml:"link"`
 	// Homepage string `xml:"guid"`
-	Homepage struct {
-		URL string `xml:"url,attr"`
-	} `xml:"enclosure"`
+	Enclosure Enclosure `xml:"enclosure"`
+	// Homepage struct {
+	// 	URL string `xml:"url,attr"`
+	// } `xml:"enclosure"`
 }
 
-// TorrentURL 返回 torrent 文件的 URL
-func (t *RSSTorrent) TorrentURL() string {
-	return t.Homepage.URL
+type Enclosure struct {
+	URL string `xml:"url,attr"`
 }
-

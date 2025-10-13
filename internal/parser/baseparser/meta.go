@@ -1,4 +1,5 @@
-package parser
+// Package baseparser 包含对标题的基本解析功能, 额外提供 tmdb 和 mikan 的解析功能, TODO:bangumi解析未做
+package baseparser
 
 import (
 	"strconv"
@@ -630,6 +631,7 @@ func (p *TitleMetaParser) Parser(title string) *Episode {
 	}
 
 	nameEn, nameZh, nameJp := p.nameProcess()
+	titleRaw := firstNonEmptyString(nameZh, nameJp, nameEn)
 
 	if group == "" {
 		group = p.getGroup()
@@ -651,9 +653,7 @@ func (p *TitleMetaParser) Parser(title string) *Episode {
 	}
 
 	return &Episode{
-		TitleEn:    nameEn,
-		TitleZh:    nameZh,
-		TitleJp:    nameJp,
+		TitleRaw:   titleRaw,
 		Season:     season,
 		SeasonRaw:  seasonRaw,
 		Episode:    episode,
@@ -685,8 +685,6 @@ func IsPoint5(title string) bool {
 	match, _ := Point5Re.FindStringMatch(title)
 	return match != nil
 }
-
-
 
 // ============ 字符判断辅助函数（替代正则提升性能）============
 
@@ -785,4 +783,13 @@ func startsWithChinese(s string) bool {
 		}
 	}
 	return count >= 2
+}
+
+func firstNonEmptyString(strs ...string) string {
+	for _, s := range strs {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }

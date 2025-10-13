@@ -1,7 +1,6 @@
 package network
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -12,13 +11,13 @@ import (
 
 // ImageCache manages image downloading and local caching
 type ImageCache struct {
-	client    *RequestURL
+	client    *RequestClient
 	cacheDir  string
 	posterDir string
 }
 
 // NewImageCache creates a new image cache manager
-func NewImageCache(client *RequestURL, dataDir string) (*ImageCache, error) {
+func NewImageCache(client *RequestClient, dataDir string) (*ImageCache, error) {
 	if dataDir == "" {
 		dataDir = "data"
 	}
@@ -53,13 +52,13 @@ func base64ToURL(encoded string) (string, error) {
 }
 
 // SaveImage downloads and saves an image to cache
-func (ic *ImageCache) SaveImage(ctx context.Context, url string) ([]byte, error) {
+func (ic *ImageCache) SaveImage(url string) ([]byte, error) {
 	// Generate base64 encoded filename
 	imgEncoded := urlToBase64(url)
 	imagePath := filepath.Join(ic.posterDir, imgEncoded)
 
 	// Download image
-	imgData, err := ic.client.Get(ctx, url)
+	imgData, err := ic.client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download image: %w", err)
 	}
@@ -74,7 +73,7 @@ func (ic *ImageCache) SaveImage(ctx context.Context, url string) ([]byte, error)
 }
 
 // LoadImage 从缓存加载图片，如果不存在则下载
-func (ic *ImageCache) LoadImage(ctx context.Context, imgPath string) ([]byte, error) {
+func (ic *ImageCache) LoadImage(imgPath string) ([]byte, error) {
 	// Check if it's a URL
 	if strings.HasPrefix(imgPath, "http") {
 		imgPath = urlToBase64(imgPath)
@@ -101,7 +100,7 @@ func (ic *ImageCache) LoadImage(ctx context.Context, imgPath string) ([]byte, er
 		return nil, fmt.Errorf("cannot download image: invalid URL from path %s", imgPath)
 	}
 
-	imgData, err := ic.SaveImage(ctx, decodedURL)
+	imgData, err := ic.SaveImage(decodedURL)
 	if err != nil {
 		return nil, err
 	}

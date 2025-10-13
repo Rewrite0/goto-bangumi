@@ -4,9 +4,7 @@ import "fmt"
 
 // Episode 表示解析后的剧集信息
 type Episode struct {
-	TitleEn    string
-	TitleZh    string
-	TitleJp    string
+	TitleRaw   string
 	Season     int
 	SeasonRaw  string
 	Episode    int
@@ -23,9 +21,7 @@ type Episode struct {
 // String 返回 Episode 的格式化字符串
 func (e *Episode) String() string {
 	return fmt.Sprintf(`Episode 解析结果:
-  标题中文: %s
-  标题英文: %s
-  标题日文: %s
+  标题: %s
   季度: S%02d (%s)
   集数: E%02d
   字幕组: %s
@@ -36,7 +32,7 @@ func (e *Episode) String() string {
   年份: %s
   音频: %s
   视频: %s`,
-		e.TitleZh, e.TitleEn, e.TitleJp,
+		e.TitleRaw,
 		e.Season, e.SeasonRaw, e.Episode,
 		e.Group, e.Sub, e.SubType,
 		e.Resolution, e.Source, e.Year,

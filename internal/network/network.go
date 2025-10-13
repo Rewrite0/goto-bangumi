@@ -2,7 +2,6 @@
 package network
 
 import (
-	"context"
 	"io"
 	"time"
 
@@ -21,30 +20,28 @@ const (
 
 // HTTPClient provides basic HTTP operations
 type HTTPClient interface {
-	Get(ctx context.Context, url string) ([]byte, error)
-	Post(ctx context.Context, url string, contentType string, body io.Reader) ([]byte, error)
-	CheckURL(ctx context.Context, url string) bool
+	Get(url string) ([]byte, error)
+	Post(url string, contentType string, body io.Reader) ([]byte, error)
+	CheckURL(url string) bool
 	Close() error
 }
 
 // ContentClient extends HTTPClient with content-specific methods
 type ContentClient interface {
 	HTTPClient
-	GetJSON(ctx context.Context, url string) (map[string]interface{}, error)
-	GetRSS(ctx context.Context, url string) (*model.RSSXml, error)
-	GetHTML(ctx context.Context, url string) (string, error)
-	GetContent(ctx context.Context, url string) ([]byte, error)
-	GetTorrents(ctx context.Context, url string, limit int) ([]model.Torrent, error)
-	GetRSSTitle(ctx context.Context, url string) (string, error)
-	PostData(ctx context.Context, url string, data map[string]string, files map[string][]byte) ([]byte, error)
+	GetJSON(url string) (map[string]interface{}, error)
+	GetRSS(url string) (*model.RSSXml, error)
+	GetHTML(url string) (string, error)
+	GetContent(url string) ([]byte, error)
+	GetTorrents(url string) ([]model.Torrent, error)
+	GetRSSTitle(url string) (string, error)
+	PostData(url string, data map[string]string, files map[string][]byte) ([]byte, error)
 }
 
 // CacheManager provides caching functionality
 type CacheManager interface {
-	Get(key string) (interface{}, bool)
-	Set(key string, value interface{}, ttl time.Duration)
+	Get(key string) ([]byte, bool)
+	Set(key string, value []byte, ttl time.Duration)
 	Delete(key string)
-	Clear()
-	ItemCount() int
 }
 

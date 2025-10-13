@@ -27,5 +27,5 @@ type Token struct {
 
 // TokenData JWT令牌解析数据
 type TokenData struct {
-	Username *string `json:"username"`
+	Username string `json:"username"`
 }

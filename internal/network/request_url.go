@@ -1,30 +1,52 @@
 package network
 
 import (
-	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/go-resty/resty/v2"
+	"golang.org/x/sync/singleflight"
 	"goto-bangumi/internal/model"
 )
 
-// RequestURL provides HTTP request functionality with retry and proxy support using resty
-type RequestURL struct {
+// 包级变量，存储代理配置、缓存管理器和请求去重
+var (
+	defaultProxyConfig *model.ProxyConfig
+	globalCache        CacheManager
+	requestGroup       singleflight.Group
+)
+
+func init() {
+	// 初始化全局缓存管理器（500 个缓存项，60 秒 TTL）
+	globalCache = NewMemoryCacheManager(500, 60*time.Second)
+	// 初始化默认代理配置为空
+	defaultProxyConfig = &model.ProxyConfig{}
+}
+
+// Init 初始化 network 包的代理配置
+func Init(config *model.ProxyConfig) {
+	if config != nil {
+		defaultProxyConfig = config
+		slog.Info("[Network] Network package initialized", "proxy_enabled", config.Enable)
+	}
+}
+
+// RequestClient provides HTTP request functionality with retry and proxy support using resty
+type RequestClient struct {
 	client *resty.Client
 }
 
-// NewRequestURL creates a new RequestURL instance with resty
-func NewRequestURL(config *model.ProxyConfig) (*RequestURL, error) {
-	if config == nil {
-		config = &model.ProxyConfig{}
-	}
+// NewRequestClient creates a new RequestURL instance with resty
+func NewRequestClient() (*RequestClient, error) {
 
-	// Create resty client
+	// 如果没有init config，则使用包级的 defaultProxyConfig
+	proxyConfig := defaultProxyConfig
+
 	client := resty.New()
 
 	// Set timeout
@@ -42,8 +64,8 @@ func NewRequestURL(config *model.ProxyConfig) (*RequestURL, error) {
 	})
 
 	// Configure proxy if enabled
-	if config.Enable {
-		proxyURL, err := SetProxy(config)
+	if proxyConfig.Enable {
+		proxyURL, err := SetProxy(proxyConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to set proxy: %w", err)
 		}
@@ -69,32 +91,56 @@ func NewRequestURL(config *model.ProxyConfig) (*RequestURL, error) {
 		return false
 	})
 
-	return &RequestURL{
+	return &RequestClient{
 		client: client,
 	}, nil
 }
 
-// Get performs HTTP GET request
-func (r *RequestURL) Get(ctx context.Context, url string) ([]byte, error) {
-	resp, err := r.client.R().
-		SetContext(ctx).
-		Get(url)
+// Get performs HTTP GET request with cache support and request deduplication
+func (r *RequestClient) Get(url string) ([]byte, error) {
+	// 1. 快速路径：检查缓存
+	if data, found := globalCache.Get(url); found {
+		slog.Debug("[Network] Cache hit", "url", url)
+		return data, nil
+	}
+
+	// 2. 使用 singleflight 防止并发重复请求
+	v, err, shared := requestGroup.Do(url, func() (interface{}, error) {
+		// 2.2 执行实际 HTTP 请求
+		fmt.Println("Fetching URL:", url)
+		slog.Debug("[Network] Executing HTTP request", "url", url)
+		resp, err := r.client.R().Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("GET request failed: %w", err)
+		}
+
+		if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.Status())
+		}
+
+		body := resp.Body()
+
+		// 2.3 写入缓存
+		globalCache.Set(url, body, DefaultCacheTTL)
+		slog.Debug("[Network] Cached response", "url", url, "size", len(body))
+
+		return body, nil
+	})
 
 	if err != nil {
-		return nil, fmt.Errorf("GET request failed: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.Status())
+	if shared {
+		slog.Debug("[Network] Request shared via singleflight", "url", url)
 	}
 
-	return resp.Body(), nil
+	return v.([]byte), nil
 }
 
 // Post performs HTTP POST request
-func (r *RequestURL) Post(ctx context.Context, url string, contentType string, body io.Reader) ([]byte, error) {
+func (r *RequestClient) Post(url string, contentType string, body io.Reader) ([]byte, error) {
 	resp, err := r.client.R().
-		SetContext(ctx).
 		SetHeader("Content-Type", contentType).
 		SetBody(body).
 		Post(url)
@@ -111,14 +157,13 @@ func (r *RequestURL) Post(ctx context.Context, url string, contentType string, b
 }
 
 // CheckURL checks if a URL is accessible
-func (r *RequestURL) CheckURL(ctx context.Context, urlStr string) bool {
+func (r *RequestClient) CheckURL(urlStr string) bool {
 	// Add http:// prefix if missing
 	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
 		urlStr = "http://" + urlStr
 	}
 
 	resp, err := r.client.R().
-		SetContext(ctx).
 		Get(urlStr)
 
 	if err != nil {
@@ -130,26 +175,25 @@ func (r *RequestURL) CheckURL(ctx context.Context, urlStr string) bool {
 }
 
 // SetHeader sets a custom header
-func (r *RequestURL) SetHeader(key, value string) {
+func (r *RequestClient) SetHeader(key, value string) {
 	r.client.SetHeader(key, value)
 }
 
 // SetRetry sets the retry count
-func (r *RequestURL) SetRetry(retry int) {
+func (r *RequestClient) SetRetry(retry int) {
 	r.client.SetRetryCount(retry)
 }
 
 // Close closes the HTTP client
-func (r *RequestURL) Close() error {
+func (r *RequestClient) Close() error {
 	// Resty doesn't require explicit cleanup, but we can close the underlying HTTP client
 	r.client.GetClient().CloseIdleConnections()
 	return nil
 }
 
 // GetJSON performs GET request and returns parsed JSON as map
-func (r *RequestURL) GetJSON(ctx context.Context, url string) (map[string]interface{}, error) {
+func (r *RequestClient) GetJSON(url string) (map[string]interface{}, error) {
 	resp, err := r.client.R().
-		SetContext(ctx).
 		Get(url)
 
 	if err != nil {
@@ -170,9 +214,8 @@ func (r *RequestURL) GetJSON(ctx context.Context, url string) (map[string]interf
 }
 
 // GetRSS fetches and parses RSS feed, returns the parsed RSS object
-func (r *RequestURL) GetRSS(ctx context.Context, url string) (*model.RSSXml, error) {
+func (r *RequestClient) GetRSS(url string) (*model.RSSXml, error) {
 	resp, err := r.client.R().
-		SetContext(ctx).
 		Get(url)
 
 	if err != nil {
@@ -194,9 +237,8 @@ func (r *RequestURL) GetRSS(ctx context.Context, url string) (*model.RSSXml, err
 }
 
 // GetHTML performs GET request and returns HTML as string
-func (r *RequestURL) GetHTML(ctx context.Context, url string) (string, error) {
+func (r *RequestClient) GetHTML(url string) (string, error) {
 	resp, err := r.client.R().
-		SetContext(ctx).
 		Get(url)
 
 	if err != nil {
@@ -211,13 +253,13 @@ func (r *RequestURL) GetHTML(ctx context.Context, url string) (string, error) {
 }
 
 // GetContent 和 Get 方法相同，后面会加缓存, Get 则是一个简单的 GET 请求
-func (r *RequestURL) GetContent(ctx context.Context, url string) ([]byte, error) {
-	return r.Get(ctx, url)
+func (r *RequestClient) GetContent(url string) ([]byte, error) {
+	return r.Get(url)
 }
 
 // GetTorrents fetches and parses RSS feed to extract torrents
-func (r *RequestURL) GetTorrents(ctx context.Context, url string) ([]model.Torrent, error) {
-	rss, err := r.GetRSS(ctx, url)
+func (r *RequestClient) GetTorrents(url string) ([]model.Torrent, error) {
+	rss, err := r.GetRSS(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get RSS feed: %w", err)
 	}
@@ -226,12 +268,12 @@ func (r *RequestURL) GetTorrents(ctx context.Context, url string) ([]model.Torre
 	for _, item := range rss.Torrents {
 		torrent := model.Torrent{
 			Name:     item.Name,
-			Homepage: item.Homepage.URL,
+			Homepage: item.Enclosure.URL,
 			RssLink: url,
 		}
 
-		if item.Homepage.URL != "" {
-			torrent.URL = item.Homepage.URL
+		if item.Enclosure.URL != "" {
+			torrent.URL = item.Enclosure.URL
 			torrent.Homepage = item.Link
 		} else {
 			torrent.URL = item.Link
@@ -244,8 +286,8 @@ func (r *RequestURL) GetTorrents(ctx context.Context, url string) ([]model.Torre
 }
 
 // GetRSSTitle fetches RSS feed and returns the channel title
-func (r *RequestURL) GetRSSTitle(ctx context.Context, url string) (string, error) {
-	rss, err := r.GetRSS(ctx, url)
+func (r *RequestClient) GetRSSTitle(url string) (string, error) {
+	rss, err := r.GetRSS(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to get RSS feed: %w", err)
 	}
@@ -254,8 +296,8 @@ func (r *RequestURL) GetRSSTitle(ctx context.Context, url string) (string, error
 }
 
 // PostData sends form data and files via POST request
-func (r *RequestURL) PostData(ctx context.Context, url string, data map[string]string, files map[string][]byte) ([]byte, error) {
-	req := r.client.R().SetContext(ctx)
+func (r *RequestClient) PostData(url string, data map[string]string, files map[string][]byte) ([]byte, error) {
+	req := r.client.R()
 
 	// Set form data
 	if data != nil {
