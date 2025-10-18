@@ -3,11 +3,12 @@ package model
 type Config struct {
 	Program       ProgramConfig       `json:"program" mapstructure:"program"`
 	Downloader    DownloaderConfig    `json:"downloader" mapstructure:"downloader"`
-	RssParser     RssParserConfig     `json:"rss_parser" mapstructure:"rss_parser"`
+	RssParse     RssParserConfig     `json:"rss_parser" mapstructure:"rss_parser"`
 	BangumiManage BangumiManageConfig `json:"bangumi_manage" mapstructure:"bangumi_manage"`
 	Log           LogConfig           `json:"log" mapstructure:"log"`
 	Proxy         ProxyConfig         `json:"proxy" mapstructure:"proxy"`
 	Notification  NotificationConfig  `json:"notification" mapstructure:"notification"`
+	Password      string              `json:"password" mapstructure:"password"`
 }
 
 type ProgramConfig struct {

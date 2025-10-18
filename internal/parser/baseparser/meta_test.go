@@ -185,7 +185,7 @@ func TestRawParser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := RawParser(tt.content)
+			info := RawParse(tt.content)
 			if info == nil {
 				t.Fatal("parser returned nil")
 			}
@@ -193,8 +193,8 @@ func TestRawParser(t *testing.T) {
 			if tt.wantGroup != "" && info.Group != tt.wantGroup {
 				t.Errorf("Group = %v, want %v", info.Group, tt.wantGroup)
 			}
-			if tt.wantTitleRaw != "" && info.TitleRaw != tt.wantTitleRaw {
-				t.Errorf("TitleRaw = %v, want %v", info.TitleRaw, tt.wantTitleRaw)
+			if tt.wantTitleRaw != "" && info.Title != tt.wantTitleRaw {
+				t.Errorf("Title = %v, want %v", info.Title, tt.wantTitleRaw)
 			}
 			if tt.wantRes != "" && info.Resolution != tt.wantRes {
 				t.Errorf("Resolution = %v, want %v", info.Resolution, tt.wantRes)

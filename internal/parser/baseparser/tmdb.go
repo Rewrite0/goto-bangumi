@@ -1,7 +1,6 @@
 package baseparser
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -57,22 +56,19 @@ func SearchURL(keyword string) string {
 func InfoURL(showID int, language string) string {
 	lang, ok := Language[language]
 	if !ok {
-		lang = Language["en"] // Default to English if language not found
+		lang = Language["zh"] // Default to English if language not found
 	}
 	return fmt.Sprintf("%s/3/tv/%d?api_key=%s&language=%s",
 		tmdbURL, showID, tmdbKey, lang)
 }
 
-// NewTMDBParser creates a new TMDB parser instance
-func NewTMDBParser() (*TMDBParser, error) {
-	client, err := network.NewRequestClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create network client: %w", err)
-	}
+// NewTMDBParse creates a new TMDB parser instance
+func NewTMDBParse() *TMDBParser {
+	client := network.NewRequestClient()
 
 	return &TMDBParser{
 		client: client,
-	}, nil
+	}
 }
 
 // TMDBSearch searches for TV shows on TMDB by keyword
@@ -80,14 +76,9 @@ func (p *TMDBParser) TMDBSearch(keyword string) ([]model.ShowInfo, error) {
 	url := SearchURL(keyword)
 	slog.Debug("[TMDB] Searching TV shows", "keyword", keyword, "url", url)
 
-	data, err := p.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search TMDB: %w", err)
-	}
-
 	var searchResult model.SearchResult
-	if err := json.Unmarshal(data, &searchResult); err != nil {
-		return nil, fmt.Errorf("failed to parse search result: %w", err)
+	if err := p.client.GetJSONTo(url, &searchResult); err != nil {
+		return nil, err
 	}
 
 	slog.Debug("[TMDB] Search completed", "results_count", len(searchResult.Results))
@@ -99,14 +90,9 @@ func (p *TMDBParser) TMDBInfo(id int, language string) (*model.TVShow, error) {
 	url := InfoURL(id, language)
 	slog.Debug("[TMDB] Fetching TV show info", "id", id, "language", language)
 
-	data, err := p.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get TMDB info: %w", err)
-	}
-
 	var tvShow model.TVShow
-	if err := json.Unmarshal(data, &tvShow); err != nil {
-		return nil, fmt.Errorf("failed to parse TV show info: %w", err)
+	if err := p.client.GetJSONTo(url, &tvShow); err != nil {
+		return nil, err
 	}
 
 	slog.Debug("[TMDB] TV show info fetched", "name", tvShow.Name, "seasons", len(tvShow.Seasons))
@@ -177,10 +163,10 @@ func FindAnimation(contents []model.ShowInfo) *model.ShowInfo {
 	return nil
 }
 
-// TMDBParser searches and parses TMDB information for a bangumi
+// TMDBParse searches and parses TMDB information for a bangumi
 // Returns TMDBInfo or nil if not found
-func (p *TMDBParser) TMDBParser(title string, language string) (*model.TMDBInfo, error) {
-	slog.Info("[TMDB] Starting TMDB parser", "title", title, "language", language)
+func (p *TMDBParser) TMDBParse(title string, language string) (*model.TmdbItem, error) {
+	slog.Debug("[TMDB] Starting TMDB parser", "title", title, "language", language)
 
 	// First search attempt
 	contents, err := p.TMDBSearch(title)
@@ -219,12 +205,12 @@ func (p *TMDBParser) TMDBParser(title string, language string) (*model.TMDBInfo,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get TV show info: %w", err)
 	}
-	fmt.Printf("TMDB Info: %+v\n", tvShow)
 
 	// 用最后一个季度作为当前季度
 	lastSeason := GetSeason(tvShow.Seasons)
 
-	seasonTime, err := time.Parse("2006-01-02", lastSeason.AirDate)
+	// 不以季度的年份为准， 因为tmdb 是以最先播出的时间为准
+	seasonTime, err := time.Parse("2006-01-02", content.FirstAirDate)
 	var year string
 	if err != nil {
 		year = strconv.Itoa(time.Now().Year())
@@ -235,34 +221,32 @@ func (p *TMDBParser) TMDBParser(title string, language string) (*model.TMDBInfo,
 	// 构造海报链接
 	posterLink := tmdbImgURL + lastSeason.PosterPath
 
-	tmdbInfo := &model.TMDBInfo{
+	tmdbInfo := &model.TmdbItem{
 		ID:            tvShow.ID,
-		Title:         tvShow.Name,
-		OriginalTitle: tvShow.OriginalName,
-		Seasons:       tvShow.Seasons,
-		LastSeason:    lastSeason.SeasonNumber,
 		Year:          year,
+		OriginalTitle: tvShow.OriginalName,
+		AirDate:       lastSeason.AirDate,
+		EpisodeCount:  lastSeason.EpisodeCount,
+		Title:         tvShow.Name,
+		Season:        lastSeason.SeasonNumber,
 		PosterLink:    posterLink,
+		VoteAverage:   tvShow.VoteAverage,
 	}
 
 	return tmdbInfo, nil
 }
 
-// Close closes the TMDB parser and releases resources
-func (p *TMDBParser) Close() error {
-	if p.client != nil {
-		return p.client.Close()
-	}
-	return nil
-}
+// // Close closes the TMDB parser and releases resources
+// func (p *TMDBParser) Close() error {
+// 	if p.client != nil {
+// 		return p.client.Close()
+// 	}
+// 	return nil
+// }
 
 // ParseTMDB is a convenience function that creates a parser, parses, and closes
-func ParseTMDB(title string, language string) (*model.TMDBInfo, error) {
-	parser, err := NewTMDBParser()
-	if err != nil {
-		return nil, err
-	}
-	defer parser.Close()
+func ParseTMDB(title string, language string) (*model.TmdbItem, error) {
+	parser := NewTMDBParse()
 
-	return parser.TMDBParser(title, language)
+	return parser.TMDBParse(title, language)
 }

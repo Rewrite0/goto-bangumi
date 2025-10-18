@@ -22,7 +22,6 @@ const (
 type HTTPClient interface {
 	Get(url string) ([]byte, error)
 	Post(url string, contentType string, body io.Reader) ([]byte, error)
-	CheckURL(url string) bool
 	Close() error
 }
 
@@ -30,6 +29,7 @@ type HTTPClient interface {
 type ContentClient interface {
 	HTTPClient
 	GetJSON(url string) (map[string]interface{}, error)
+	GetJSONTo(url string, v any) error
 	GetRSS(url string) (*model.RSSXml, error)
 	GetHTML(url string) (string, error)
 	GetContent(url string) ([]byte, error)

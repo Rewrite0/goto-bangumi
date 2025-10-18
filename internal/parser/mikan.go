@@ -7,51 +7,51 @@ import (
 	"goto-bangumi/internal/parser/baseparser"
 )
 
-type MikanParser struct{}
+type MikanParse struct{}
 
-func NewMikanParser() *MikanParser {
-	return &MikanParser{}
+func NewMikanParse() *MikanParse {
+	return &MikanParse{}
 }
 
-func (p *MikanParser) Parse(homepage string) *model.Bangumi {
+func (p *MikanParse) Parse(homepage string) (*model.Bangumi, error) {
 	// mikan 解析
 
-	mikanParser := baseparser.NewMikanParser()
-	mikanInfo, err := mikanParser.Parse(homepage)
+	mikanParse := baseparser.NewMikanParser()
+	mikanInfo, err := mikanParse.Parse(homepage)
 	if err != nil {
-		// 解析失败
-		return nil
+		// 直接传递错误，上层可以用 apperrors.IsNetworkError() 或 apperrors.IsParseError() 判断
+		return nil, err
 	}
-	if mikanInfo == nil || mikanInfo.PosterLink == "" || mikanInfo.ID == "" {
-		return nil
+	if mikanInfo == nil {
+		return nil, nil
 	}
 	return &model.Bangumi{
 		OfficialTitle: mikanInfo.OfficialTitle,
 		Season:        mikanInfo.Season,
 		PosterLink:    mikanInfo.PosterLink,
-	}
+	}, nil
 }
 
-func (p *MikanParser) PosterParser(bangumi *model.Bangumi) bool {
+func (p *MikanParse) PosterParse(bangumi *model.Bangumi) (bool, error) {
 	// if bangumi.MikanID == "" {
-	// 	return false
+	// 	return false, nil
 	// }
 	// FIXME: 这里后面要修复
-	homepage := parserConfig.MikanCustomURL + "/Home/Bangumi/" 
+	homepage := ParserConfig.MikanCustomURL + "/Home/Bangumi/"
 	// + bangumi.MikanID
 	if !strings.HasPrefix(homepage, "http") {
 		homepage = "https://" + homepage
 	}
-	mikanParser := baseparser.NewMikanParser()
-	posterLink, err := mikanParser.PosterParser(homepage)
+	mikanParse := baseparser.NewMikanParser()
+	posterLink, err := mikanParse.PosterParse(homepage)
 	if err != nil {
-		// 解析失败
-		return false
+		// 直接传递错误，上层可以判断错误类型
+		return false, err
 	}
 	if posterLink != "" {
 		bangumi.PosterLink = posterLink
-		return true
+		return true, nil
 	}
 
-	return false
+	return false, nil
 }

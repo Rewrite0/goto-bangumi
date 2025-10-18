@@ -1,45 +1,68 @@
 package baseparser
 
 import (
+	_ "embed"
 	"testing"
 )
 
-func TestMikanParser(t *testing.T) {
+//go:embed testdata/mikan_3599.html
+var mikan3599HTML []byte
+
+//go:embed testdata/mikan_3751.html
+var mikan3751HTML []byte
+
+//go:embed testdata/mikan_3790.html
+var mikan3790HTML []byte
+
+func TestMikanParse(t *testing.T) {
 	parser := NewMikanParser()
 	tests := []struct {
-		name       string
-		homepage   string
-		wantID     string
-		wantTitle  string
-		wantSeason int
-		wantPoster string
+		name        string
+		homepage    string
+		mockHTML    []byte // 如果不为空，则使用缓存模拟数据
+		wantMikanID int
+		wantTitle   string
+		wantSeason  int
+		wantPoster  string
 	}{
 		{
-			name:       "拥有超常技能的异世界流浪美食家 第二季",
-			homepage:   "https://mikanani.me/Home/Episode/8c94c1699735481c8b2b18dba38908042f53adcc",
-			wantID:     "3751#1230",
-			wantTitle:  "拥有超常技能的异世界流浪美食家",
-			wantSeason: 2,
-			wantPoster: "https://mikanani.me/images/Bangumi/202510/0710007f.jpg",
+			name:        "拥有超常技能的异世界流浪美食家 第二季（使用缓存）",
+			homepage:    "https://mikanani.me/Home/Episode/8c94c1699735481c8b2b18dba38908042f53adcc",
+			mockHTML:    mikan3751HTML,
+			wantMikanID: 3751,
+			wantTitle:   "拥有超常技能的异世界流浪美食家",
+			wantSeason:  2,
+			wantPoster:  "https://mikanani.me/images/Bangumi/202510/0710007f.jpg",
 		},
 		{
-			name:       "妖怪旅馆营业中",
-			homepage:   "https://mikanani.me/Home/Episode/f2340bae48a4c7eae1421190d603d4c889d490b7",
-			wantID:     "3790#370",
-			wantTitle:  "妖怪旅馆营业中",
-			wantSeason: 2,
-			wantPoster: "https://mikanani.me/images/Bangumi/202510/0d10efc3.jpg",
+			name:        "妖怪旅馆营业中（使用缓存）",
+			homepage:    "https://mikanani.me/Home/Episode/f2340bae48a4c7eae1421190d603d4c889d490b7",
+			mockHTML:    mikan3790HTML,
+			wantMikanID: 3790,
+			wantTitle:   "妖怪旅馆营业中",
+			wantSeason:  2,
+			wantPoster:  "https://mikanani.me/images/Bangumi/202510/0d10efc3.jpg",
+		},
+		{
+			name:        "夏日口袋（使用缓存）",
+			homepage:    "https://mikanani.me/Home/Episode/8c2e3e9f7b71419a513d2647f5004f3a0f08a7f0",
+			mockHTML:    mikan3599HTML,
+			wantMikanID: 3599,
+			wantTitle:   "夏日口袋",
+			wantSeason:  1,
+			wantPoster:  "https://mikanani.me/images/Bangumi/202504/076c1094.jpg",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// 缓存已在 TestMain 中集中设置
 			mikanInfo, _ := parser.Parse(tt.homepage)
 			if mikanInfo == nil {
 				t.Fatalf("Parse(%q) returned nil", tt.homepage)
 			}
-			if mikanInfo.ID != tt.wantID {
-				t.Errorf("MikanID = %q, want %q", mikanInfo.ID, tt.wantID)
+			if mikanInfo.ID != tt.wantMikanID {
+				t.Errorf("MikanID = %d, want %d", mikanInfo.ID, tt.wantMikanID)
 			}
 			if mikanInfo.OfficialTitle != tt.wantTitle {
 				t.Errorf("OfficialTitle = %q, want %q", mikanInfo.OfficialTitle, tt.wantTitle)
@@ -59,21 +82,30 @@ func TestMikanPoster(t *testing.T) {
 	tests := []struct {
 		name       string
 		homepage   string
+		mockHTML   []byte // 如果不为空，则使用缓存模拟数据
 		wantID     string
 		wantTitle  string
 		wantSeason int
 		wantPoster string
 	}{
 		{
-			name:       "拥有超常技能的异世界流浪美食家 第二季",
+			name:       "拥有超常技能的异世界流浪美食家 第二季（使用缓存）",
 			homepage:   "https://mikanani.me/Home/Episode/8c94c1699735481c8b2b18dba38908042f53adcc",
+			mockHTML:   mikan3751HTML,
 			wantPoster: "https://mikanani.me/images/Bangumi/202510/0710007f.jpg",
+		},
+		{
+			name:       "夏日口袋（使用缓存）",
+			homepage:   "https://mikanani.me/Home/Episode/8c2e3e9f7b71419a513d2647f5004f3a0f08a7f0",
+			mockHTML:   mikan3599HTML,
+			wantPoster: "https://mikanani.me/images/Bangumi/202504/076c1094.jpg",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			posterLink, _ := parser.PosterParser(tt.homepage)
+			// 缓存已在 TestMain 中集中设置
+			posterLink, _ := parser.PosterParse(tt.homepage)
 			if posterLink == "" {
 				t.Fatalf("Parse(%q) returned nil", tt.homepage)
 			}

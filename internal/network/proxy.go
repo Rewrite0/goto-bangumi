@@ -6,25 +6,33 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"goto-bangumi/internal/model"
 )
 
+// export type ProxyType = ['http', 'https', 'socks5'];
 // SetProxy creates a proxy URL from config
-func SetProxy(config *model.ProxyConfig) (*url.URL, error) {
+// 如果配置无效或不支持，则返回 nil
+func SetProxy(config *model.ProxyConfig) *url.URL {
+	supportProxyTypes := []string{"http", "socks5"}
 	if config == nil || !config.Enable {
-		return nil, nil
+		return nil
 	}
 
+	// 只支持 http 和 socks5
+	proxyType := config.Type
+	if !slices.Contains(supportProxyTypes, proxyType) {
+		slog.Warn("[Network] Unsupported proxy type", "type", proxyType)
+		return nil
+	}
 	// Remove http:// prefix if present
 	host := config.Host
-	if len(host) > 7 && host[:7] == "http://" {
-		host = host[7:]
-	}
-	if len(host) > 8 && host[:8] == "https://" {
-		host = host[8:]
-	}
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.TrimPrefix(host, "socks5://")
 
 	// Build auth string
 	auth := ""
@@ -32,23 +40,19 @@ func SetProxy(config *model.ProxyConfig) (*url.URL, error) {
 		auth = fmt.Sprintf("%s:%s@", config.Username, config.Password)
 	}
 
-	// Validate proxy type
-	proxyType := config.Type
-	if proxyType != "http" && proxyType != "https" {
-		return nil, fmt.Errorf("unsupported proxy type: %s (only http/https supported)", proxyType)
-	}
-
 	// Build proxy URL
 	proxyURL := fmt.Sprintf("%s://%s%s:%d", proxyType, auth, host, config.Port)
-	return url.Parse(proxyURL)
+	urlParse, err := url.Parse(proxyURL)
+	if err != nil {
+		slog.Error("[Network] Invalid proxy URL", "error", err)
+		return nil
+	}
+	return urlParse
 }
 
 // TestProxy tests if proxy connection works
 func TestProxy(config *model.ProxyConfig) error {
-	proxyURL, err := SetProxy(config)
-	if err != nil {
-		return fmt.Errorf("failed to create proxy URL: %w", err)
-	}
+	proxyURL := SetProxy(config)
 
 	// Create client with proxy
 	transport := &http.Transport{}
@@ -87,10 +91,7 @@ func TestProxy(config *model.ProxyConfig) error {
 
 // CreateProxyTransport creates an HTTP transport with proxy support
 func CreateProxyTransport(config *model.ProxyConfig) (*http.Transport, error) {
-	proxyURL, err := SetProxy(config)
-	if err != nil {
-		return nil, err
-	}
+	proxyURL := SetProxy(config)
 
 	transport := &http.Transport{
 		MaxIdleConns:       100,

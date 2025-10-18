@@ -97,18 +97,9 @@ type TVShow struct {
 	ProductionCountries []map[string]string          `json:"production_countries"`
 	Seasons             []SeasonTmdb                     `json:"seasons"`
 	NextEpisodeToAir    any                  `json:"next_episode_to_air"` // Can be string or null
+	VoteAverage         float64                      `json:"vote_average"`
 }
 
-// TMDBInfo represents processed TMDB information for a bangumi
-type TMDBInfo struct {
-	ID            int              `json:"id"`
-	Title         string           `json:"title"`
-	OriginalTitle string           `json:"original_title"`
-	Seasons       []SeasonTmdb   `json:"seasons"` // Changed from int to []SeasonSimple
-	LastSeason    int              `json:"last_season"`
-	Year          string           `json:"year"`
-	PosterLink    string           `json:"poster_link"`
-}
 
 
 // SearchResult represents the search result from TMDB API

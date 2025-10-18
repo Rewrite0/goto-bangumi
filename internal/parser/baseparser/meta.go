@@ -11,7 +11,7 @@ import (
 )
 
 // Episode 是 model.Episode 的类型别名
-type Episode = model.Episode
+// type Episode = model.Episode
 
 // TitleMetaParser 原始视频标题解析器,差不多一秒解析6000个的样子
 type TitleMetaParser struct {
@@ -22,8 +22,8 @@ type TitleMetaParser struct {
 	seasonTrusted  bool
 }
 
-// NewTitleMetaParser 创建新的解析器实例
-func NewTitleMetaParser() *TitleMetaParser {
+// NewTitleMetaParse 创建新的解析器实例
+func NewTitleMetaParse() *TitleMetaParser {
 	return &TitleMetaParser{
 		rawTitle:       "",
 		title:          "",
@@ -31,20 +31,6 @@ func NewTitleMetaParser() *TitleMetaParser {
 		episodeTrusted: false,
 		seasonTrusted:  false,
 	}
-}
-
-// processTitle 预处理标题，统一格式
-func (p *TitleMetaParser) processTitle() {
-	// title 里面可能有"\n"
-	p.title = strings.ReplaceAll(p.title, "\n", " ")
-	// 如果以【开头
-	if strings.HasPrefix(p.title, "【") {
-		p.title = strings.ReplaceAll(p.title, "【", "[")
-		p.title = strings.ReplaceAll(p.title, "】", "]")
-	}
-	p.title = strings.TrimSpace(p.title)
-	// 末尾加一个 / 处理边界
-	p.title += "/"
 }
 
 // findallSubTitle 查找并替换标题中的模式
@@ -122,8 +108,8 @@ func (p *TitleMetaParser) episodeInfoToEpisode(episodeInfo []string) int {
 	return 0
 }
 
-// parserEpisode 解析剧集号
-func (p *TitleMetaParser) parserEpisode(episodeInfo [][]string, episodeIsTrusted bool) int {
+// parseEpisode 解析剧集号
+func (p *TitleMetaParser) parseEpisode(episodeInfo [][]string, episodeIsTrusted bool) int {
 	if len(episodeInfo) == 0 {
 		// 实在没找到,返回0
 		return 0
@@ -177,7 +163,7 @@ func (p *TitleMetaParser) getTrustedEpisode() int {
 	// }
 	if len(episodeInfo) > 0 {
 		p.episodeTrusted = true
-		return p.parserEpisode(episodeInfo, true)
+		return p.parseEpisode(episodeInfo, true)
 	}
 	return -1
 }
@@ -186,7 +172,7 @@ func (p *TitleMetaParser) getTrustedEpisode() int {
 func (p *TitleMetaParser) getUntrustedEpisode() int {
 	episodeInfo := p.findallSubTitle(EpisodeReUntrusted, "[]")
 	if len(episodeInfo) > 0 {
-		return p.parserEpisode(episodeInfo, false)
+		return p.parseEpisode(episodeInfo, false)
 	}
 	return 0
 }
@@ -586,11 +572,15 @@ func (p *TitleMetaParser) getAudioInfo() string {
 	return ""
 }
 
-// Parser 解析标题，返回 Episode 信息
-func (p *TitleMetaParser) Parser(title string) *Episode {
+// Parse 解析标题，返回 Episode 信息
+func (p *TitleMetaParser) Parse(title string) *model.EpisodeMetadata {
 	p.rawTitle = title
 	p.title = title
-	p.processTitle()
+	// TODO: 这个函数可和 request_url.go 里的 processTitle 合并
+	p.title = processTitle(p.title)
+
+	// 末尾加一个 / 处理边界
+	p.title += "/"
 
 	// 从一个自己定义的字幕组文件中获取字幕组信息, 保证字幕组信息的准确性
 	group := p.getGroupInfo()
@@ -652,8 +642,8 @@ func (p *TitleMetaParser) Parser(title string) *Episode {
 		videoInfoStr = strings.Join(videoInfo, ",")
 	}
 
-	return &Episode{
-		TitleRaw:   titleRaw,
+	return &model.EpisodeMetadata{
+		Title:      titleRaw,
 		Season:     season,
 		SeasonRaw:  seasonRaw,
 		Episode:    episode,
@@ -668,10 +658,10 @@ func (p *TitleMetaParser) Parser(title string) *Episode {
 	}
 }
 
-// RawParser 解析原始视频标题
-func RawParser(raw string) *Episode {
-	parser := NewTitleMetaParser()
-	return parser.Parser(raw)
+// RawParse 解析原始视频标题
+func RawParse(raw string) *model.EpisodeMetadata {
+	parser := NewTitleMetaParse()
+	return parser.Parse(raw)
 }
 
 // IsV1 判断是否是 v1 番剧
@@ -792,4 +782,16 @@ func firstNonEmptyString(strs ...string) string {
 		}
 	}
 	return ""
+}
+
+func processTitle(title string) string {
+	// title 里面可能有"\n"
+	title = strings.ReplaceAll(title, "\n", "")
+	// 如果以【开头
+	if strings.HasPrefix(title, "【") {
+		title = strings.ReplaceAll(title, "【", "[")
+		title = strings.ReplaceAll(title, "】", "]")
+	}
+	title = strings.TrimSpace(title)
+	return title
 }

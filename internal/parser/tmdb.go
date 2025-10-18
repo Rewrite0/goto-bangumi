@@ -6,35 +6,31 @@ import (
 	// "strconv"
 )
 
-type TmdbParser struct{}
+type TmdbParse struct{}
 
-func NewTmdbParser() *TmdbParser {
-	return &TmdbParser{}
+func NewTmdbParse() *TmdbParse {
+	return &TmdbParse{}
 }
 
-func (p *TmdbParser) Parse(title string, language string) *model.Bangumi {
-	tmdb, _ := baseparser.NewTMDBParser()
-	tmdbInfo, _ := tmdb.TMDBParser(title, language)
-	if tmdbInfo == nil{
+func (p *TmdbParse) Parse(title string, language string) *model.Bangumi {
+	tmdb := baseparser.NewTMDBParse()
+	tmdbInfo, _ := tmdb.TMDBParse(title, language)
+	if tmdbInfo == nil {
 		return nil
 	}
-	//TODO: original title 是一个更好的标准
+	// TODO: original title 是一个更好的标准
 	return &model.Bangumi{
 		OfficialTitle: tmdbInfo.Title,
-		TitleRaw:      title,
 		Year:          tmdbInfo.Year,
-		Season:        tmdbInfo.LastSeason,
+		Season:        tmdbInfo.Season,
 		PosterLink:    tmdbInfo.PosterLink,
 	}
 }
 
-func (p *TmdbParser) PosterParser(bangumi *model.Bangumi) bool {
-tmdb, err := baseparser.NewTMDBParser()
-	if err != nil {
-		return false
-	}
-tmdbInfo,_:= tmdb.TMDBParser(bangumi.OfficialTitle, parserConfig.Language)
-	if tmdbInfo == nil{
+func (p *TmdbParse) PosterParse(bangumi *model.Bangumi) bool {
+	tmdb := baseparser.NewTMDBParse()
+	tmdbInfo, _ := tmdb.TMDBParse(bangumi.OfficialTitle, ParserConfig.Language)
+	if tmdbInfo == nil {
 		return false
 	}
 	if tmdbInfo.PosterLink != "" {
@@ -44,4 +40,3 @@ tmdbInfo,_:= tmdb.TMDBParser(bangumi.OfficialTitle, parserConfig.Language)
 	}
 	return false
 }
-

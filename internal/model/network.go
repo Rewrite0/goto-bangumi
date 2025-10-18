@@ -17,6 +17,17 @@ type ProxyConfig struct {
 	Password string `json:"password" mapstructure:"password"`
 }
 
+func NewProxyConfig() *ProxyConfig {
+	return &ProxyConfig{
+		Enable:   false,
+		Type:     "http",
+		Host:     "",
+		Port:     0,
+		Username: "",
+		Password: "",
+	}
+}
+
 // RSSXml represents RSS feed starting from channel level
 type RSSXml struct {
 	Title    string       `xml:"channel>title"`
