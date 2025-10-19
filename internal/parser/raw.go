@@ -41,7 +41,7 @@ func (p *RawParse) Parse(title string) *model.Bangumi {
 		IncludeFilter: strings.Join(ParserConfig.Include, ","),
 		ExcludeFilter: strings.Join(ParserConfig.Filter, ","),
 		Parse:        "raw",
-		RssLink:       "",
+		RRSSLink:       "",
 		PosterLink:    "",
 		Deleted:       false,
 	}

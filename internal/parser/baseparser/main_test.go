@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 	// 设置 Mikan 测试缓存 - 夏日口袋
 	network.SetTestCache("https://mikanani.me/Home/Episode/8c2e3e9f7b71419a513d2647f5004f3a0f08a7f0", mikan3599HTML)
 
+	// 设置 Mikan 测试缓存 - 边缘情况（无mikanID、无官方标题、无poster）
+	network.SetTestCache("https://mikanani.me/Home/Episode/699000310671bae565c37abb20d119824efeb6f0", mikanEdgeCaseHTML)
+
 	// 运行测试
 	code := m.Run()
 

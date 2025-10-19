@@ -1,7 +1,6 @@
 package refresh
 
 import (
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func OfficialTitleParse(torrent model.Torrent) (*model.Bangumi, error) {
-	bangumi := &model.Bangumi{}
+	bangumi := model.NewBangumi()
 	if torrent.Homepage != "" {
 		// 对于有 homepage 的, 默认进行一遍解析, 用以得到更准确的标题
 		// 就算是 mikan 的, 也不一定有 homepage
@@ -26,8 +25,12 @@ func OfficialTitleParse(torrent model.Torrent) (*model.Bangumi, error) {
 			bangumi.MikanItem = mikanInfo
 			bangumi.Season = mikanInfo.Season
 		} else {
-			// TODO 对网络错误和解析错误进行区分
 			slog.Debug("mikan 解析失败", slog.String("种子名称", torrent.Name), slog.String("错误信息", err.Error()))
+			// TODO: 对网络错误和解析错误进行区分
+			// 网络错误直接返回,不做反面的解析
+			if apperrors.IsNetworkError(err) {
+				return nil, err
+			}
 		}
 	}
 	if bangumi.Parse == "bangumi" {
@@ -38,28 +41,23 @@ func OfficialTitleParse(torrent model.Torrent) (*model.Bangumi, error) {
 		if bangumi.OfficialTitle != "" {
 			// 优先使用 mikan 解析到的标题
 			title = bangumi.OfficialTitle
-		}
-		if title == "" {
+		} else {
 			// 否则使用种子标题
 			title = baseparser.NewTitleMetaParse().Parse(torrent.Name).Title
 		}
 
 		tmdbInfo, err := tmdbParse.TMDBParse(title, "zh")
-		// if err != nil {
-		// 	if apperrors.IsNetworkError(err) {
-		// 	}
-		// }
-
 		// 当 tmdb 也没有找到信息的时候，如果 mikan 也没有找到， 报错
-		if err != nil && bangumi.OfficialTitle == "" {
-			return nil, fmt.Errorf("无法解析番剧标题: %s, 错误信息: %s", torrent.Name, err.Error())
+		if err != nil {
+			if bangumi.OfficialTitle == "" {
+				return nil, err
+			}
+			return bangumi, err
 		}
 		// 只有在没有解析到标题的情况下才使用 tmdb 的结果
 		if bangumi.OfficialTitle == "" {
 			bangumi.OfficialTitle = tmdbInfo.Title
 			bangumi.PosterLink = tmdbInfo.PosterLink
-			bangumi.TmdbItem = tmdbInfo
-			bangumi.Parse = "tmdb"
 		}
 		// 总是以 tmdb 的季度为准
 		bangumi.Season = tmdbInfo.Season
@@ -98,7 +96,7 @@ func FilterTorrent(torrent *model.Torrent, bangumi *model.Bangumi) bool {
 	return true
 }
 
-func TorrentToBangumi(torrent model.Torrent, rss model.RSSItem) *model.Bangumi {
+func TorrentToBangumi(torrent model.Torrent, rss model.RSSItem) (*model.Bangumi, error) {
 	bangumi, err := OfficialTitleParse(torrent)
 	metaInfo := baseparser.NewTitleMetaParse().Parse(torrent.Name)
 	// 为空在两种可能
@@ -106,17 +104,41 @@ func TorrentToBangumi(torrent model.Torrent, rss model.RSSItem) *model.Bangumi {
 	// 2. 网络的问题 , 这会导致永远无法出来这个番剧,这是不对的
 	// TODO: 后面会有一些合并， 现在先放着
 	bangumi, err = OfficialTitleParse(torrent)
-	if err != nil && apperrors.IsNetworkError(err) {
-		return nil
+	// 对于网络错误, 不添加
+	if err != nil && bangumi == nil {
+		if apperrors.IsNetworkError(err) {
+			return nil, err
+		}
 	}
-	bangumi.RssLink = rss.URL
+	// 解析错误主要是 tmdb 没有找到对应的番剧
+	// mikan 能解析成功的话,这里不会是 nil
+	// 对于解析错误, 以 metaInfo 构造 bangumi
+	if bangumi == nil {
+		bangumi = model.NewBangumi()
+		bangumi.OfficialTitle = metaInfo.Title
+		bangumi.Season = metaInfo.Season
+	}
+
+	bangumi.IncludeFilter = strings.Join(parser.ParserConfig.Include, ",")
+	bangumi.ExcludeFilter = strings.Join(parser.ParserConfig.Filter, ",")
+	bangumi.RRSSLink = rss.URL
 	bangumi.EpisodeMetadata = append(bangumi.EpisodeMetadata, *metaInfo)
-	return bangumi
+	return bangumi, nil
 }
 
 func CreateBangumi(torrent model.Torrent, rss model.RSSItem) {
-	bangumi := TorrentToBangumi(torrent, rss)
+	bangumi, err := TorrentToBangumi(torrent, rss)
+	if err != nil && apperrors.IsNetworkError(err) {
+		slog.Warn("网络错误，跳过该番剧的添加", slog.String("种子名称", torrent.Name), slog.String("错误信息", err.Error()))
+		return
+	}
+	// 对 mikan 部份错误进行处理
+
 	if bangumi != nil {
+		if torrent.Homepage != "" && bangumi.MikanItem == nil {
+			// 这里对应 mikan 未添加的情况, 一般出现在季度初
+			// TODO: 没想好怎么处理, 先放着
+		}
 		// 对 bangumi 进行处理，要看看有没有相同的 bangumi 项
 		// 有相同的就只更新metadata
 		db := database.GetDB()

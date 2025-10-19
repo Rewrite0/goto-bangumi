@@ -63,7 +63,10 @@ func TestMikanParse(t *testing.T) {
 				network.SetTestCache(tt.homepage, tt.mockHTML)
 			}
 
-			mikanInfo := parser.Parse(tt.homepage)
+			mikanInfo,err := parser.Parse(tt.homepage)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tt.homepage, err)
+			}
 			if mikanInfo == nil {
 				t.Fatalf("Parse(%q) returned nil", tt.homepage)
 			}

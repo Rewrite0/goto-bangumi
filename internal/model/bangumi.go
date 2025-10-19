@@ -107,7 +107,7 @@ type Bangumi struct {
 	MikanItem *MikanItem `gorm:"foreignKey:MikanID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 	TmdbItem  *TmdbItem  `gorm:"foreignKey:TmdbID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 	// 属于一个 RSSItem
-	RssLink string `json:"rss_link" gorm:"default:'';comment:'关联的RSS订阅链接'"`
+	RRSSLink string `json:"rss_link" gorm:"default:'';comment:'关联的RSS订阅链接'"`
 
 	// has many关系，关联 BangumiParse
 	EpisodeMetadata []EpisodeMetadata `gorm:"foreignKey:BangumiID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
@@ -116,9 +116,17 @@ type Bangumi struct {
 	Offset        int    `json:"offset" gorm:"default:0;comment:'番剧偏移量'"`
 	IncludeFilter string `json:"include_filter" gorm:"default:'';comment:'番剧包含过滤器'"`
 	ExcludeFilter string `json:"exclude_filter" gorm:"default:'';comment:'番剧排除过滤器'"`
-	Parse         string `json:"parser" gorm:"default:'mikan';comment:'番剧解析器'"`
+	Parse         string `json:"parser" gorm:"default:'tmdb';comment:'番剧解析器'"`
 	PosterLink    string `json:"poster_link" gorm:"default:'';comment:'番剧海报链接'"`
 	Deleted       bool   `json:"deleted" gorm:"default:false;comment:'是否已删除'"`
+}
+
+// NewBangumi 创建一个默认的 Bangumi 实例
+func NewBangumi() *Bangumi {
+	return &Bangumi{
+		Season: 1,
+		Parse:  "tmdb",
+	}
 }
 
 // 重新设计几个表来确定 bangumi 和 mikanid, tmdbid , bangumiid 的关系

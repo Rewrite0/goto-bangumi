@@ -131,11 +131,14 @@ func (r *RequestClient) Get(url string) ([]byte, error) {
 		slog.Debug("[Network] Executing HTTP request", "url", url)
 		resp, err := r.client.R().Get(url)
 		if err != nil {
-			return nil, &apperrors.NetworkError{Err: fmt.Errorf("GET request failed: %w", err)}
+			return nil, &apperrors.NetworkError{Err: fmt.Errorf("GET request failed: %w", err), StatusCode: 0}
 		}
 
 		if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-			return nil, &apperrors.NetworkError{Err: fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.Status())}
+			return nil, &apperrors.NetworkError{
+				Err:        fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.Status()),
+				StatusCode: resp.StatusCode(),
+			}
 		}
 
 		body := resp.Body()
@@ -165,11 +168,14 @@ func (r *RequestClient) Post(url string, contentType string, body io.Reader) ([]
 		SetBody(body).
 		Post(url)
 	if err != nil {
-		return nil, &apperrors.NetworkError{Err: fmt.Errorf("POST request failed: %w", err)}
+		return nil, &apperrors.NetworkError{Err: fmt.Errorf("POST request failed: %w", err), StatusCode: 0}
 	}
 
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		return nil, &apperrors.NetworkError{Err: fmt.Errorf("POST request failed with status: %d", resp.StatusCode())}
+		return nil, &apperrors.NetworkError{
+			Err:        fmt.Errorf("POST request failed with status: %d", resp.StatusCode()),
+			StatusCode: resp.StatusCode(),
+		}
 	}
 
 	return resp.Body(), nil
@@ -299,11 +305,14 @@ func (r *RequestClient) PostData(url string, data map[string]string, files map[s
 
 	resp, err := req.Post(url)
 	if err != nil {
-		return nil, &apperrors.NetworkError{Err: fmt.Errorf("POST data request failed: %w", err)}
+		return nil, &apperrors.NetworkError{Err: fmt.Errorf("POST data request failed: %w", err), StatusCode: 0}
 	}
 
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		return nil, &apperrors.NetworkError{Err: fmt.Errorf("POST request failed with status: %d", resp.StatusCode())}
+		return nil, &apperrors.NetworkError{
+			Err:        fmt.Errorf("POST request failed with status: %d", resp.StatusCode()),
+			StatusCode: resp.StatusCode(),
+		}
 	}
 
 	return resp.Body(), nil

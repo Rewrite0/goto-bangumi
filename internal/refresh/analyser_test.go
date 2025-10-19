@@ -113,7 +113,7 @@ func TestTorrentToBangumi(t *testing.T) {
 			},
 			wantBangumi: &model.Bangumi{
 				OfficialTitle: "弹珠汽水瓶里的千岁同学",
-				RssLink:       "https://mikanani.me/RSS/Search?searchstr=ANI",
+				RRSSLink:       "https://mikanani.me/RSS/Search?searchstr=ANI",
 				Year:          "2025",
 				Season:        1,
 				PosterLink:    "https://mikanani.me/images/Bangumi/202510/37749647.jpg",
@@ -138,7 +138,11 @@ func TestTorrentToBangumi(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotBangumi := TorrentToBangumi(tt.torrent, tt.rss)
+			gotBangumi,err := TorrentToBangumi(tt.torrent, tt.rss)
+			if err != nil {
+				t.Errorf("TorrentToBangumi() error = %v, want nil", err)
+				return
+			}
 			if gotBangumi == nil {
 				t.Errorf("TorrentToBangumi() = nil, want non-nil")
 				return
@@ -146,8 +150,8 @@ func TestTorrentToBangumi(t *testing.T) {
 			if gotBangumi.OfficialTitle != tt.wantBangumi.OfficialTitle {
 				t.Errorf("OfficialTitle = %v, want %v", gotBangumi.OfficialTitle, tt.wantBangumi.OfficialTitle)
 			}
-			if gotBangumi.RssLink != tt.wantBangumi.RssLink {
-				t.Errorf("RssLink = %v, want %v", gotBangumi.RssLink, tt.wantBangumi.RssLink)
+			if gotBangumi.RRSSLink != tt.wantBangumi.RRSSLink {
+				t.Errorf("RssLink = %v, want %v", gotBangumi.RRSSLink, tt.wantBangumi.RRSSLink)
 			}
 			if gotBangumi.Year != tt.wantBangumi.Year {
 				t.Errorf("Year = %v, want %v", gotBangumi.Year, tt.wantBangumi.Year)

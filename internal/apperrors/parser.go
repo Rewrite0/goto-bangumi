@@ -2,21 +2,17 @@ package apperrors
 
 import "errors"
 
-// 定义解析器相关错误类型
-var (
-	// ErrNetwork 网络请求相关错误
-	ErrNetwork = errors.New("network error")
-
-	// ErrParse 解析内容相关错误
-	ErrParse = errors.New("parse error")
-)
 
 // NetworkError 网络错误类型
 type NetworkError struct {
-	Err error
+	Err        error
+	StatusCode int // HTTP 状态码，0 表示非 HTTP 错误
 }
 
 func (e *NetworkError) Error() string {
+	if e.StatusCode > 0 {
+		return "network error: " + e.Err.Error()
+	}
 	return "network error: " + e.Err.Error()
 }
 
@@ -47,4 +43,22 @@ func IsNetworkError(err error) bool {
 func IsParseError(err error) bool {
 	var parseErr *ParseError
 	return errors.As(err, &parseErr)
+}
+
+// IsUnauthorizedError 判断是否为 401 未授权错误
+func IsUnauthorizedError(err error) bool {
+	var netErr *NetworkError
+	if errors.As(err, &netErr) {
+		return netErr.StatusCode == 401
+	}
+	return false
+}
+
+// GetStatusCode 从 NetworkError 中获取 HTTP 状态码，如果不是 NetworkError 则返回 0
+func GetStatusCode(err error) int {
+	var netErr *NetworkError
+	if errors.As(err, &netErr) {
+		return netErr.StatusCode
+	}
+	return 0
 }

@@ -38,10 +38,8 @@ func (p *MikanParser) PosterParse(homepage string) (string, error) {
 	client := network.NewRequestClient()
 	content, err := client.Get(homepage)
 	if err != nil {
-		// network 层已经返回 NetworkError，直接传递
 		return "", err
 	}
-	// parse mikan html content
 
 	doc, err := html.Parse(bytes.NewReader(content))
 	if err != nil {
@@ -56,7 +54,6 @@ func (p *MikanParser) parseHTML(content []byte, pageURL string) (*model.MikanIte
 	if err != nil {
 		return nil, &apperrors.ParseError{Err: fmt.Errorf("failed to parse HTML: %w", err)}
 	}
-
 	info := model.NewMikanItem()
 
 	// 1. 查找 RSS 链接并提取 Mikan ID
@@ -95,7 +92,7 @@ func (p *MikanParser) parseHTML(content []byte, pageURL string) (*model.MikanIte
 	// 3. 提取封面图片链接
 	info.PosterLink, err = p.extractPosterLink(doc, pageURL)
 	if err != nil {
-		return info, &apperrors.ParseError{Err: err}
+		return info, err
 	}
 
 	return info, nil
@@ -137,20 +134,20 @@ func (p *MikanParser) extractMikanID(rssURL string) (int, error) {
 	// 示例: /RSS/Bangumi?bangumiId=3060&subgroupid=583
 	u, err := url.Parse(rssURL)
 	if err != nil {
-		return 0, err
+		return 0, &apperrors.ParseError{Err: fmt.Errorf("failed to parse RSS URL: %w", err)}
 	}
 
 	bangumiID := u.Query().Get("bangumiId")
 	// subgroupID := u.Query().Get("subgroupid")
 
 	if bangumiID == "" {
-		return 0, fmt.Errorf("bangumiId not found in URL")
+		return 0, &apperrors.ParseError{Err: fmt.Errorf("bangumiId not found in URL")}
 	}
 
 	// 转换为整数返回
 	id, err := strconv.Atoi(bangumiID)
 	if err != nil {
-		return 0, err
+		return 0, &apperrors.ParseError{Err: fmt.Errorf("invalid bangumiId: %w", err)}
 	}
 	return id, nil
 }
@@ -160,22 +157,19 @@ func (p *MikanParser) extractPosterLink(n *html.Node, pageURL string) (string, e
 	// 查找 <div class="bangumi-poster" style="background-image: url('...')">
 	posterDiv := p.findBangumiPoster(n)
 	if posterDiv == "" {
-		return "", fmt.Errorf("poster div not found")
+		return "", &apperrors.ParseError{Err: fmt.Errorf("bangumi-poster div not found")}
 	}
 
 	// 从 style 属性中提取 URL
 	// 示例: "background-image: url('/images/Bangumi/...')"
 	posterLink := utils.ExtractURLFromStyle(posterDiv)
 	if posterLink == "" {
-		return "", fmt.Errorf("poster URL not found in style")
-	}
-
-	// 解析根域名
+		return "", &apperrors.ParseError{Err: fmt.Errorf("poster URL not found in style")}
+	} // 解析根域名
 	u, err := url.Parse(pageURL)
 	if err != nil {
-		return posterLink, fmt.Errorf("failed to parse page URL: %w", err)
+		return posterLink, &apperrors.ParseError{Err: fmt.Errorf("failed to parse page URL: %w", err)}
 	}
-
 	// 拼接完整 URL
 	posterLink = strings.Split(posterLink, "?")[0]
 	if strings.HasPrefix(posterLink, "/") {

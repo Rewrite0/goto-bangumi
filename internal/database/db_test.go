@@ -44,7 +44,7 @@ func TestAddBangumi(t *testing.T) {
 		Season: 1,
 		MikanItem: &mikanItem,
 		TmdbItem: &tmdbItem,
-		RssLink: "https://example.com/rss",
+		RRSSLink: "https://example.com/rss",
 	}
 	db.CreateBangumi(&bangumi)
 }

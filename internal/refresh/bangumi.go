@@ -22,7 +22,7 @@ func getTorrents(url string) []*model.Torrent {
 func pullRss(url string) []*model.Torrent {
 	torrents := getTorrents(url)
 	for _, t := range torrents {
-		t.Bangumi.RssLink = url
+		t.Bangumi.RRSSLink = url
 	}
 	return torrents
 }
