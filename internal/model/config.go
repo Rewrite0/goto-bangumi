@@ -3,7 +3,7 @@ package model
 type Config struct {
 	Program       ProgramConfig       `json:"program" mapstructure:"program"`
 	Downloader    DownloaderConfig    `json:"downloader" mapstructure:"downloader"`
-	RssParse     RssParserConfig     `json:"rss_parser" mapstructure:"rss_parser"`
+	RssParse      RssParserConfig     `json:"rss_parser" mapstructure:"rss_parser"`
 	BangumiManage BangumiManageConfig `json:"bangumi_manage" mapstructure:"bangumi_manage"`
 	Log           LogConfig           `json:"log" mapstructure:"log"`
 	Proxy         ProxyConfig         `json:"proxy" mapstructure:"proxy"`
@@ -23,6 +23,17 @@ type DownloaderConfig struct {
 	Ssl      bool   `json:"ssl" mapstructure:"ssl"`
 	Username string `json:"username" mapstructure:"username"`
 	Password string `json:"password" mapstructure:"password"`
+}
+
+func NewDownloaderConfig() *DownloaderConfig {
+	return &DownloaderConfig{
+		Type:     "qbittorrent",
+		Path:     "/downloads/Bangumi",
+		Host:     "127.0.0.1:8080",
+		Username: "admin",
+		Password: "adminadmin",
+		Ssl:      false,
+	}
 }
 
 type RssParserConfig struct {

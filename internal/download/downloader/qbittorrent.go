@@ -1,4 +1,4 @@
-package qbittorrent
+package downloader
 
 import (
 	"crypto/tls"
@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-resty/resty/v2"
+	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/model"
+
+	"github.com/go-resty/resty/v2"
 )
 
-//QBAPI qBittorrent API URL 定义
+// QBAPI qBittorrent API URL 定义
 var QBAPI = map[string]string{
 	"add":            "/api/v2/torrents/add",
 	"addTags":        "/api/v2/torrents/addTags",
@@ -31,49 +33,60 @@ var QBAPI = map[string]string{
 	"version":        "/api/v2/app/version",
 }
 
-// Downloader qBittorrent 下载器实现
-type Downloader struct {
+// QBittorrentDownloader qBittorrent 下载器实现
+type QBittorrentDownloader struct {
 	client      *resty.Client
 	config      *model.DownloaderConfig
 	apiInterval float64
 }
 
-// NewDownloader 创建新的 qBittorrent 下载器
-func NewDownloader() *Downloader {
-	return &Downloader{
+// NewQBittorrentDownloader 创建新的 qBittorrent 下载器
+func NewQBittorrentDownloader() *QBittorrentDownloader {
+	return &QBittorrentDownloader{
+		client:      resty.New(),
 		apiInterval: 0.2,
 	}
 }
 
 // Init 初始化下载器
-func (d *Downloader) Init(config *model.DownloaderConfig) error {
+func (d *QBittorrentDownloader) Init(config *model.DownloaderConfig) error {
+	if config == nil {
+		return fmt.Errorf("配置不能为空")
+	}
+
 	// 保存配置
 	d.config = config
 
-	// 创建 resty 客户端
-	client := resty.New()
-	client.SetBaseURL(d.config.Host)
-	client.SetTimeout(30 * time.Second)
+	// 构建完整的 URL（添加协议前缀）
+	baseURL := d.config.Host
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		if d.config.Ssl {
+			baseURL = "https://" + baseURL
+		} else {
+			baseURL = "http://" + baseURL
+		}
+	}
+
+	d.client.SetBaseURL(baseURL)
+	d.client.SetTimeout(30 * time.Second)
 
 	// 设置默认请求头
-	client.SetHeaders(map[string]string{
+	d.client.SetHeaders(map[string]string{
 		"User-Agent": "goto-bangumi",
 	})
 
 	// 设置 TLS 配置
 	// 如果不验证 SSL，则跳过证书验证
 	if !d.config.Ssl {
-		client.SetTLSClientConfig(&tls.Config{
+		d.client.SetTLSClientConfig(&tls.Config{
 			InsecureSkipVerify: true,
 		})
 	}
-
-	d.client = client
 	return nil
 }
 
 // Auth 认证登录
-func (d *Downloader) Auth() (bool, error) {
+func (d *QBittorrentDownloader) Auth() (bool, error) {
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"username": d.config.Username,
@@ -81,12 +94,12 @@ func (d *Downloader) Auth() (bool, error) {
 		}).
 		SetHeader("Content-Type", "application/x-www-form-urlencoded").
 		Post(QBAPI["login"])
-
 	if err != nil {
 		slog.Error("[qBittorrent] 连接到qBittorrent时出错，请检查您的主机配置", "host", d.config.Host, "error", err)
-		return false, err
+		return false, &apperrors.NetworkError{Err: fmt.Errorf("连接到qBittorrent时出错: %w", err), StatusCode: 0}
 	}
 
+	fmt.Print("qb resp = ", resp.String())
 	if resp.StatusCode() == 200 {
 		if strings.TrimSpace(resp.String()) == "Ok." {
 			slog.Debug("[qBittorrent] 登录成功")
@@ -94,60 +107,59 @@ func (d *Downloader) Auth() (bool, error) {
 		}
 		if strings.TrimSpace(resp.String()) == "Fails." {
 			slog.Error("[qBittorrent] 登录失败，请检查用户名/密码", "username", d.config.Username)
-			return false, fmt.Errorf("登录失败：用户名或密码错误")
+			return false, &apperrors.NetworkError{Err: fmt.Errorf("登录失败：用户名或密码错误"), StatusCode: 200}
 		}
 	}
 
 	if resp.StatusCode() == 403 {
 		slog.Error("[qBittorrent] 您的IP已被qBittorrent封禁，请解除封禁（或重启qBittorrent）后重试")
-		return false, fmt.Errorf("IP被封禁")
+		return false, &apperrors.NetworkError{Err: fmt.Errorf("IP被封禁"), StatusCode: 403}
 	}
 
-	return false, fmt.Errorf("登录失败：状态码 %d", resp.StatusCode())
+	return false, &apperrors.NetworkError{Err: fmt.Errorf("登录失败：状态码 %d", resp.StatusCode()), StatusCode: resp.StatusCode()}
 }
 
 // Logout 登出
-func (d *Downloader) Logout() (bool, error) {
+func (d *QBittorrentDownloader) Logout() (bool, error) {
 	resp, err := d.client.R().Post(QBAPI["logout"])
 	if err != nil {
 		slog.Error("[qBittorrent] 登出错误", "error", err)
-		return false, err
+		return false, &apperrors.NetworkError{Err: fmt.Errorf("登出错误: %w", err), StatusCode: 0}
 	}
 
 	if resp.StatusCode() == 200 {
 		return true, nil
 	}
 
-	return false, fmt.Errorf("登出失败：状态码 %d", resp.StatusCode())
+	return false, &apperrors.NetworkError{Err: fmt.Errorf("登出失败：状态码 %d", resp.StatusCode()), StatusCode: resp.StatusCode()}
 }
 
 // CheckHost 检查主机连通性
-func (d *Downloader) CheckHost() (bool, error) {
-	slog.Debug("[qBittorrent] 检查主机", "host", d.config.Host)
-
-	resp, err := d.client.R().Get(QBAPI["version"])
-	if err != nil {
-		slog.Error("[qBittorrent] 检查主机错误，请检查您的主机配置", "host", d.config.Host, "error", err)
-		return false, err
-	}
-
-	// 状态码 200 或 403 都表示主机可访问
-	if resp.StatusCode() == 200 || resp.StatusCode() == 403 {
-		slog.Debug("[qBittorrent] 检查主机成功", "host", d.config.Host)
-		return true, nil
-	}
-
-	return false, fmt.Errorf("主机不可访问：状态码 %d", resp.StatusCode())
-}
+// func (d *QBittorrentDownloader) CheckHost() (bool, error) {
+// 	slog.Debug("[qBittorrent] 检查主机", "host", d.config.Host)
+//
+// 	// resp, err := d.client.R().Get(QBAPI["version"])
+// 	// if err != nil {
+// 	// 	slog.Error("[qBittorrent] 检查主机错误，请检查您的主机配置", "host", d.config.Host, "error", err)
+// 	// 	return false, &apperrors.NetworkError{Err: fmt.Errorf("检查主机错误: %w", err), StatusCode: 0}
+// 	// }
+// 	//
+// 	// // 状态码 200 或 403 都表示主机可访问
+// 	// if resp.StatusCode() == 200 || resp.StatusCode() == 403 {
+// 	// 	slog.Debug("[qBittorrent] 检查主机成功", "host", d.config.Host)
+// 	// 	return true, nil
+// 	// }
+// 	//
+// 	// return false, &apperrors.NetworkError{Err: fmt.Errorf("主机不可访问：状态码 %d", resp.StatusCode()), StatusCode: resp.StatusCode()}
+// }
 
 // AddCategory 添加分类
-func (d *Downloader) AddCategory(category string) (bool, error) {
+func (d *QBittorrentDownloader) AddCategory(category string) (bool, error) {
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"category": category,
 		}).
 		Post(QBAPI["createCategory"])
-
 	if err != nil {
 		d.handleException(err, resp, "add_category")
 		return false, err
@@ -161,11 +173,10 @@ func (d *Downloader) AddCategory(category string) (bool, error) {
 }
 
 // GetTorrentFiles 获取种子文件列表
-func (d *Downloader) GetTorrentFiles(hash string) ([]string, error) {
+func (d *QBittorrentDownloader) GetTorrentFiles(hash string) ([]string, error) {
 	resp, err := d.client.R().
 		SetQueryParam("hash", hash).
 		Get(QBAPI["getFiles"])
-
 	if err != nil {
 		d.handleException(err, resp, "get_torrent_files")
 		return nil, err
@@ -182,6 +193,7 @@ func (d *Downloader) GetTorrentFiles(hash string) ([]string, error) {
 		return nil, nil
 	}
 
+	fmt.Print("qb get files resp = ", resp.String())
 	if resp.StatusCode() == 200 {
 		var files []map[string]interface{}
 		if err := json.Unmarshal(resp.Body(), &files); err != nil {
@@ -204,11 +216,10 @@ func (d *Downloader) GetTorrentFiles(hash string) ([]string, error) {
 // 返回 (连接状态, 种子信息, error)
 // 连接状态: true 表示连上了 client, false 表示没连上
 // 种子信息: 成功时返回 TorrentDownloadInfo, 失败返回 nil
-func (d *Downloader) TorrentInfo(hash string) (bool, *model.TorrentDownloadInfo, error) {
+func (d *QBittorrentDownloader) TorrentInfo(hash string) (bool, *model.TorrentDownloadInfo, error) {
 	resp, err := d.client.R().
 		SetQueryParam("hash", hash).
 		Get(QBAPI["properties"])
-
 	if err != nil {
 		// 连接错误
 		slog.Error("[qBittorrent] torrent_info 连接错误", "error", err)
@@ -242,7 +253,7 @@ func (d *Downloader) TorrentInfo(hash string) (bool, *model.TorrentDownloadInfo,
 		}
 
 		result := &model.TorrentDownloadInfo{
-			ETA:       &eta,
+			ETA:       eta,
 			SavePath:  info["save_path"].(string),
 			Completed: completionDate,
 		}
@@ -255,7 +266,7 @@ func (d *Downloader) TorrentInfo(hash string) (bool, *model.TorrentDownloadInfo,
 }
 
 // TorrentsInfo 获取种子信息列表
-func (d *Downloader) TorrentsInfo(statusFilter, category string, tag *string, limit int) ([]map[string]interface{}, error) {
+func (d *QBittorrentDownloader) TorrentsInfo(statusFilter, category string, tag *string, limit int) ([]map[string]interface{}, error) {
 	req := d.client.R().
 		SetQueryParams(map[string]string{
 			"filter":   statusFilter,
@@ -273,7 +284,6 @@ func (d *Downloader) TorrentsInfo(statusFilter, category string, tag *string, li
 	}
 
 	resp, err := req.Get(QBAPI["info"])
-
 	if err != nil {
 		d.handleException(err, resp, "torrents_info")
 		return nil, err
@@ -294,7 +304,7 @@ func (d *Downloader) TorrentsInfo(statusFilter, category string, tag *string, li
 
 // Add 添加种子
 // TODO: 没必要这么复杂的 hash ,  加个tag 然后再拿一次就好了
-func (d *Downloader) Add(torrentURL, savePath, category string) (*string, error) {
+func (d *QBittorrentDownloader) Add(torrentURL, savePath, category string) (*string, error) {
 	var torrentHash string
 	var torrentContent []byte
 
@@ -347,7 +357,6 @@ func (d *Downloader) Add(torrentURL, savePath, category string) (*string, error)
 	}
 
 	resp, err := req.Post(QBAPI["add"])
-
 	if err != nil {
 		d.handleException(err, resp, "add")
 		return nil, err
@@ -372,7 +381,7 @@ func (d *Downloader) Add(torrentURL, savePath, category string) (*string, error)
 }
 
 // Delete 删除种子
-func (d *Downloader) Delete(hashes []string) (bool, error) {
+func (d *QBittorrentDownloader) Delete(hashes []string) (bool, error) {
 	hashesStr := strings.Join(hashes, "|")
 
 	resp, err := d.client.R().
@@ -381,7 +390,6 @@ func (d *Downloader) Delete(hashes []string) (bool, error) {
 			"deleteFiles": "true",
 		}).
 		Post(QBAPI["delete"])
-
 	if err != nil {
 		d.handleException(err, resp, "delete")
 		return false, err
@@ -396,7 +404,7 @@ func (d *Downloader) Delete(hashes []string) (bool, error) {
 }
 
 // Rename 重命名种子文件
-func (d *Downloader) Rename(torrentHash, oldPath, newPath string) (bool, error) {
+func (d *QBittorrentDownloader) Rename(torrentHash, oldPath, newPath string) (bool, error) {
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"hash":    torrentHash,
@@ -404,7 +412,6 @@ func (d *Downloader) Rename(torrentHash, oldPath, newPath string) (bool, error) 
 			"newPath": newPath,
 		}).
 		Post(QBAPI["renameFile"])
-
 	if err != nil {
 		d.handleException(err, resp, "rename")
 		return false, err
@@ -425,7 +432,7 @@ func (d *Downloader) Rename(torrentHash, oldPath, newPath string) (bool, error) 
 }
 
 // Move 移动种子到新位置
-func (d *Downloader) Move(hashes []string, newLocation string) (bool, error) {
+func (d *QBittorrentDownloader) Move(hashes []string, newLocation string) (bool, error) {
 	hashesStr := strings.Join(hashes, "|")
 
 	resp, err := d.client.R().
@@ -434,7 +441,6 @@ func (d *Downloader) Move(hashes []string, newLocation string) (bool, error) {
 			"location": newLocation,
 		}).
 		Post(QBAPI["setLocation"])
-
 	if err != nil {
 		d.handleException(err, resp, "move")
 		return false, err
@@ -449,14 +455,13 @@ func (d *Downloader) Move(hashes []string, newLocation string) (bool, error) {
 }
 
 // SetCategory 设置种子分类
-func (d *Downloader) SetCategory(hash, category string) (bool, error) {
+func (d *QBittorrentDownloader) SetCategory(hash, category string) (bool, error) {
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"hashes":   hash,
 			"category": category,
 		}).
 		Post(QBAPI["setCategory"])
-
 	if err != nil {
 		d.handleException(err, resp, "set_category")
 		return false, err
@@ -471,14 +476,13 @@ func (d *Downloader) SetCategory(hash, category string) (bool, error) {
 }
 
 // AddTag 添加标签
-func (d *Downloader) AddTag(hash, tag string) (bool, error) {
+func (d *QBittorrentDownloader) AddTag(hash, tag string) (bool, error) {
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"hashes": hash,
 			"tags":   tag,
 		}).
 		Post(QBAPI["addTags"])
-
 	if err != nil {
 		d.handleException(err, resp, "add_tag")
 		return false, err
@@ -493,11 +497,10 @@ func (d *Downloader) AddTag(hash, tag string) (bool, error) {
 }
 
 // SetPreferences 设置偏好设置
-func (d *Downloader) SetPreferences(prefs map[string]interface{}) error {
+func (d *QBittorrentDownloader) SetPreferences(prefs map[string]interface{}) error {
 	resp, err := d.client.R().
 		SetBody(prefs).
 		Post(QBAPI["setPreferences"])
-
 	if err != nil {
 		d.handleException(err, resp, "set_preferences")
 		return err
@@ -511,7 +514,7 @@ func (d *Downloader) SetPreferences(prefs map[string]interface{}) error {
 }
 
 // handleException 统一处理异常
-func (d *Downloader) handleException(err error, resp *resty.Response, functionName string) {
+func (d *QBittorrentDownloader) handleException(err error, resp *resty.Response, functionName string) {
 	if resp != nil && resp.StatusCode() == 403 {
 		slog.Error("[qBittorrent] 需要先登录", "function", functionName)
 		if resp != nil {
@@ -552,3 +555,4 @@ func min(a, b int) int {
 	}
 	return b
 }
+
