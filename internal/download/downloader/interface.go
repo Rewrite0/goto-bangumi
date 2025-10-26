@@ -1,10 +1,9 @@
-package download
+package downloader
 
 import (
 	"fmt"
 	"strings"
 
-	"goto-bangumi/internal/download/downloader"
 	"goto-bangumi/internal/model"
 )
 
@@ -43,20 +42,22 @@ type BaseDownloader interface {
 	Move(hashes []string, newLocation string) (bool, error)
 
 	// Add 添加种子
-	Add(torrentURL, savePath, category string) (*string, error)
+	Add(torrentInfo *model.TorrentInfo, savePath string) (string, error)
+
+	// CheckHash 检查种子是否存在，返回真实的hash
+	CheckHash(hash string) (string, error)
 
 	// Delete 删除种子
 	Delete(hashes []string) (bool, error)
+
+	// GetInterval 获取下载器轮询间隔时间，单位ms
+	GetInterval() int
 }
 
 // NewDownloader 创建下载器实例
 // 根据 downloaderType 动态选择具体的下载器实现
 // 支持的类型: "qbittorrent", "qb"
-func NewDownloader(downloaderType string, config *model.DownloaderConfig) (BaseDownloader, error) {
-	if config == nil {
-		return nil, fmt.Errorf("下载器配置不能为空")
-	}
-
+func NewDownloader(downloaderType string) (BaseDownloader, error) {
 	if downloaderType == "" {
 		return nil, fmt.Errorf("下载器类型不能为空")
 	}
@@ -65,19 +66,13 @@ func NewDownloader(downloaderType string, config *model.DownloaderConfig) (BaseD
 
 	// 根据类型选择具体的下载器实现
 	switch strings.ToLower(downloaderType) {
-	case "qbittorrent", "qb":
-		d = downloader.NewQBittorrentDownloader()
+	case "qbittorrent":
+		d = NewQBittorrentDownloader()
 	case "alist":
 		// TODO: Alist 下载器待实现
-		return nil, fmt.Errorf("Alist 下载器暂未实现")
+		return nil, fmt.Errorf("alist 下载器暂未实现")
 	default:
 		return nil, fmt.Errorf("不支持的下载器类型: %s，支持的类型: qbittorrent, alist", downloaderType)
 	}
-
-	// 初始化下载器
-	if err := d.Init(config); err != nil {
-		return nil, fmt.Errorf("初始化下载器失败: %w", err)
-	}
-
 	return d, nil
 }

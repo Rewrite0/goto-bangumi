@@ -20,6 +20,20 @@ func (e *NetworkError) Unwrap() error {
 	return e.Err
 }
 
+// AuthenticationError 认证错误类型（用户名或密码错误）
+type AuthenticationError struct {
+	Err      error
+	Username string
+}
+
+func (e *AuthenticationError) Error() string {
+	return "authentication error: " + e.Err.Error()
+}
+
+func (e *AuthenticationError) Unwrap() error {
+	return e.Err
+}
+
 // ParseError 解析错误类型
 type ParseError struct {
 	Err error
@@ -61,4 +75,10 @@ func GetStatusCode(err error) int {
 		return netErr.StatusCode
 	}
 	return 0
+}
+
+// IsAuthenticationError 判断是否为认证错误
+func IsAuthenticationError(err error) bool {
+	var authErr *NetworkError
+	return errors.As(err, &authErr) && authErr.StatusCode == 403
 }

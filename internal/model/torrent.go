@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 
 // Torrent 种子信息模型
@@ -45,4 +48,18 @@ type EpisodeFile struct {
 type SubtitleFile struct {
 	EpisodeFile
 	Language string `json:"language"`
+}
+
+// TorrentInfo 种子解析信息
+type TorrentInfo struct {
+	Name       string
+	InfoHashV1 string
+	InfoHashV2 string
+	MagnetURI  string
+	File       []byte
+}
+
+func (t TorrentInfo) String() string {
+	return fmt.Sprintf("Name: %s\n InfoHashV1: %s\n InfoHashV2: %s\n MagnetURI: %s",
+		t.Name, t.InfoHashV1, t.InfoHashV2, t.MagnetURI)
 }

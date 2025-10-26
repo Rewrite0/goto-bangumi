@@ -1,11 +1,11 @@
 package downloader
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
@@ -37,14 +37,16 @@ var QBAPI = map[string]string{
 type QBittorrentDownloader struct {
 	client      *resty.Client
 	config      *model.DownloaderConfig
-	apiInterval float64
+	ConfigName  string
+	APIInterval int // API 调用间隔（毫秒），导出供 client 使用
 }
 
 // NewQBittorrentDownloader 创建新的 qBittorrent 下载器
 func NewQBittorrentDownloader() *QBittorrentDownloader {
 	return &QBittorrentDownloader{
 		client:      resty.New(),
-		apiInterval: 0.2,
+		APIInterval: 200, // 默认 200ms 间隔
+		ConfigName:  "download",
 	}
 }
 
@@ -68,7 +70,7 @@ func (d *QBittorrentDownloader) Init(config *model.DownloaderConfig) error {
 	}
 
 	d.client.SetBaseURL(baseURL)
-	d.client.SetTimeout(30 * time.Second)
+	d.client.SetTimeout(10 * time.Second)
 
 	// 设置默认请求头
 	d.client.SetHeaders(map[string]string{
@@ -95,19 +97,22 @@ func (d *QBittorrentDownloader) Auth() (bool, error) {
 		SetHeader("Content-Type", "application/x-www-form-urlencoded").
 		Post(QBAPI["login"])
 	if err != nil {
+		// 网络连接错误：无法连接到服务器（connection refused、timeout 等）
 		slog.Error("[qBittorrent] 连接到qBittorrent时出错，请检查您的主机配置", "host", d.config.Host, "error", err)
-		return false, &apperrors.NetworkError{Err: fmt.Errorf("连接到qBittorrent时出错: %w", err), StatusCode: 0}
+		return false, &apperrors.NetworkError{
+			Err:        fmt.Errorf("连接到qBittorrent时出错: %w", err),
+			StatusCode: 0, // StatusCode = 0 表示网络连接错误
+		}
 	}
 
-	fmt.Print("qb resp = ", resp.String())
 	if resp.StatusCode() == 200 {
-		if strings.TrimSpace(resp.String()) == "Ok." {
-			slog.Debug("[qBittorrent] 登录成功")
+		if strings.Contains(resp.String(), "Ok.") {
 			return true, nil
 		}
-		if strings.TrimSpace(resp.String()) == "Fails." {
+		if strings.Contains(resp.String(), "Fails") {
+			// 认证错误：用户名或密码错误
 			slog.Error("[qBittorrent] 登录失败，请检查用户名/密码", "username", d.config.Username)
-			return false, &apperrors.NetworkError{Err: fmt.Errorf("登录失败：用户名或密码错误"), StatusCode: 200}
+			return false, &apperrors.NetworkError{Err: fmt.Errorf("用户名或密码错误"), StatusCode: 403}
 		}
 	}
 
@@ -195,16 +200,14 @@ func (d *QBittorrentDownloader) GetTorrentFiles(hash string) ([]string, error) {
 
 	fmt.Print("qb get files resp = ", resp.String())
 	if resp.StatusCode() == 200 {
-		var files []map[string]interface{}
+		var files []model.QBTorrentFile
 		if err := json.Unmarshal(resp.Body(), &files); err != nil {
 			return nil, fmt.Errorf("解析文件列表失败: %w", err)
 		}
 
 		fileNames := make([]string, 0, len(files))
 		for _, file := range files {
-			if name, ok := file["name"].(string); ok {
-				fileNames = append(fileNames, name)
-			}
+			fileNames = append(fileNames, file.Name)
 		}
 		return fileNames, nil
 	}
@@ -216,7 +219,7 @@ func (d *QBittorrentDownloader) GetTorrentFiles(hash string) ([]string, error) {
 // 返回 (连接状态, 种子信息, error)
 // 连接状态: true 表示连上了 client, false 表示没连上
 // 种子信息: 成功时返回 TorrentDownloadInfo, 失败返回 nil
-func (d *QBittorrentDownloader) TorrentInfo(hash string) (bool, *model.TorrentDownloadInfo, error) {
+func (d *QBittorrentDownloader) GetTorrentInfo(hash string) (bool, *model.TorrentDownloadInfo, error) {
 	resp, err := d.client.R().
 		SetQueryParam("hash", hash).
 		Get(QBAPI["properties"])
@@ -233,28 +236,22 @@ func (d *QBittorrentDownloader) TorrentInfo(hash string) (bool, *model.TorrentDo
 	}
 
 	if resp.StatusCode() == 200 {
-		var info map[string]interface{}
-		if err := json.Unmarshal(resp.Body(), &info); err != nil {
+		var props model.QBTorrentProperties
+		if err := json.Unmarshal(resp.Body(), &props); err != nil {
 			return true, nil, fmt.Errorf("解析种子信息失败: %w", err)
 		}
 
-		slog.Debug("[qBittorrent] 种子信息", "hash", hash, "eta", info["eta"], "save_path", info["save_path"], "completion_date", info["completion_date"])
+		slog.Debug("[qBittorrent] 种子信息", "hash", hash, "eta", props.Eta, "save_path", props.SavePath, "completion_date", props.CompletionDate)
 
 		// 处理 completion_date
 		completionDate := 0
-		if cd, ok := info["completion_date"].(float64); ok && cd != -1 {
-			completionDate = int(cd)
-		}
-
-		// 处理 eta
-		eta := 0
-		if e, ok := info["eta"].(float64); ok {
-			eta = int(e)
+		if props.CompletionDate != -1 {
+			completionDate = int(props.CompletionDate)
 		}
 
 		result := &model.TorrentDownloadInfo{
-			ETA:       eta,
-			SavePath:  info["save_path"].(string),
+			ETA:       int(props.Eta),
+			SavePath:  props.SavePath,
 			Completed: completionDate,
 		}
 
@@ -290,94 +287,75 @@ func (d *QBittorrentDownloader) TorrentsInfo(statusFilter, category string, tag 
 	}
 
 	if resp.StatusCode() == 200 {
-		var torrents []map[string]interface{}
+		var torrents []model.QBTorrentInfo
 		if err := json.Unmarshal(resp.Body(), &torrents); err != nil {
 			return nil, fmt.Errorf("解析种子列表失败: %w", err)
 		}
 
-		return torrents, nil
+		// 转换回 map[string]interface{} 以保持返回值兼容性
+		result := make([]map[string]interface{}, 0, len(torrents))
+		for _, t := range torrents {
+			data, _ := json.Marshal(t)
+			var m map[string]interface{}
+			json.Unmarshal(data, &m)
+			result = append(result, m)
+		}
+
+		return result, nil
 	}
 
 	d.handleException(err, resp, "torrents_info")
 	return nil, fmt.Errorf("获取种子列表失败：状态码 %d", resp.StatusCode())
 }
 
+func (d *QBittorrentDownloader) CheckHash(hash string) (string, error) {
+	return hash, nil
+}
+
 // Add 添加种子
 // TODO: 没必要这么复杂的 hash ,  加个tag 然后再拿一次就好了
-func (d *QBittorrentDownloader) Add(torrentURL, savePath, category string) (*string, error) {
-	var torrentHash string
-	var torrentContent []byte
+func (d *QBittorrentDownloader) Add(torrentInfo *model.TorrentInfo, savePath string) (string, error) {
+	// 准备基础表单数据
+	data := make(map[string]string)
+	data["savepath"] = savePath
+	data["category"] = "GotoBangumi"
+	data["paused"] = "false"
+	data["autoTMM"] = "false"
 
-	slog.Debug("[qBittorrent] 开始获取种子内容", "url", torrentURL)
+	var resp *resty.Response
+	var err error
 
-	// 判断是否为 magnet 链接
-	if !strings.HasPrefix(torrentURL, "magnet:") {
-		// 下载种子文件
-		resp, err := d.client.R().Get(torrentURL)
-		if err != nil || resp.StatusCode() != 200 {
-			// 如果下载失败，尝试从 URL 提取 hash
-			torrentHash = extractHash(torrentURL)
-			if torrentHash == "" {
-				slog.Error("[qBittorrent] 无法获取种子hash", "url", torrentURL)
-				return nil, fmt.Errorf("无法获取种子hash")
-			}
-			slog.Warn("[qBittorrent] 无法获取种子内容，从URL提取hash", "url", torrentURL)
-		} else {
-			torrentContent = resp.Body()
-			// TODO: 从种子文件中提取 hash
-			torrentHash = extractHash(torrentURL)
-			slog.Debug("[qBittorrent] 成功获取种子内容", "hash", torrentHash)
-		}
+	// 如果有种子文件内容，作为文件上传；否则使用磁力链接
+	if len(torrentInfo.File) > 0 {
+		// 上传种子文件（二进制内容）
+		resp, err = d.client.R().
+			SetFormData(data).
+			SetFileReader("torrents", "torrent.torrent", bytes.NewReader(torrentInfo.File)).
+			Post(QBAPI["add"])
 	} else {
-		// magnet 链接直接提取 hash
-		torrentHash = extractHash(torrentURL)
-		slog.Debug("[qBittorrent] 使用magnet链接", "url", torrentURL)
+		// 使用磁力链接
+		data["urls"] = torrentInfo.MagnetURI
+		resp, err = d.client.R().
+			SetFormData(data).
+			Post(QBAPI["add"])
 	}
 
-	// 准备请求
-	req := d.client.R().
-		SetFormData(map[string]string{
-			"savepath": savePath,
-			"category": category,
-			"paused":   "false",
-			"autoTMM":  "false",
-		})
-
-	// 如果有种子文件内容，作为文件上传；否则使用 URL
-	if len(torrentContent) > 0 {
-		req.SetFileReader("torrents", "torrent.torrent", strings.NewReader(string(torrentContent)))
-	} else {
-		req.SetFormData(map[string]string{
-			"urls":     torrentURL,
-			"savepath": savePath,
-			"category": category,
-			"paused":   "false",
-			"autoTMM":  "false",
-		})
-	}
-
-	resp, err := req.Post(QBAPI["add"])
 	if err != nil {
-		d.handleException(err, resp, "add")
-		return nil, err
+		return "", &apperrors.NetworkError{Err: fmt.Errorf("添加种子失败: %w", err), StatusCode: 0}
 	}
-
+	if resp.StatusCode() == 403 {
+		slog.Error("[qBittorrent] 需要先登录", "function", "add")
+		return "", &apperrors.NetworkError{Err: fmt.Errorf("需要先登录"), StatusCode: 403}
+	}
 	if resp.StatusCode() == 200 {
 		respText := strings.ToLower(resp.String())
 		if strings.Contains(respText, "fail") {
-			slog.Debug("[qBittorrent] 添加种子失败", "savepath", savePath, "response", respText)
-			return nil, fmt.Errorf("添加种子失败: %s", respText)
+			slog.Debug("[qBittorrent] 添加种子失败, 种子重复", "savepath", savePath, "response", respText)
+			return "", fmt.Errorf("添加种子失败: %s", respText)
 		}
-
-		// 返回 hash，只取前 40 个字符
-		if len(torrentHash) > 40 {
-			torrentHash = torrentHash[:40]
-		}
-		return &torrentHash, nil
+		return torrentInfo.InfoHashV1, nil
 	}
-
-	d.handleException(err, resp, "add")
-	return nil, fmt.Errorf("添加种子失败：状态码 %d", resp.StatusCode())
+	return "", fmt.Errorf("添加种子失败：状态码 %d", resp.StatusCode())
 }
 
 // Delete 删除种子
@@ -527,32 +505,6 @@ func (d *QBittorrentDownloader) handleException(err error, resp *resty.Response,
 	}
 }
 
-// extractHash 从 URL 或 magnet 链接中提取 hash
-func extractHash(url string) string {
-	// 尝试从 magnet 链接提取
-	if strings.HasPrefix(url, "magnet:") {
-		re := regexp.MustCompile(`btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})`)
-		matches := re.FindStringSubmatch(url)
-		if len(matches) > 1 {
-			return strings.ToLower(matches[1])
-		}
-	}
-
-	// 尝试从 URL 路径提取 40 位十六进制 hash
-	re := regexp.MustCompile(`[a-fA-F0-9]{40}`)
-	matches := re.FindStringSubmatch(url)
-	if len(matches) > 0 {
-		return strings.ToLower(matches[0])
-	}
-
-	return ""
+func (d *QBittorrentDownloader) GetInterval() int {
+	return d.APIInterval
 }
-
-// min 返回两个整数中的较小值
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
