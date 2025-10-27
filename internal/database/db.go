@@ -3,6 +3,9 @@ package database
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
 
 	"goto-bangumi/internal/model"
 
@@ -19,10 +22,24 @@ type DB struct {
 // 全局数据库实例（单例模式）
 var globalDB *DB
 
+// 用于防止并发创建相同 Bangumi 的互斥锁
+var bangumiCreateMutex sync.Mutex
+
 // NewDB 创建数据库连接
-func NewDB(dsn string) (*DB, error) {
+func NewDB(dsn *string) (*DB, error) {
 	// 打开数据库连接，使用简单配置
-	gormDB, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	var path string = filepath.Join(".", "data", "data.db")
+	if dsn != nil {
+		path = *dsn
+	}
+
+	// 确保数据库目录存在
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
+	}
+
+	gormDB, err := gorm.Open(sqlite.Open(path), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
@@ -64,7 +81,7 @@ func (db *DB) Close() error {
 // ============ 单例模式相关方法 ============
 
 // InitDB 初始化全局数据库实例
-func InitDB(dsn string) error {
+func InitDB(dsn *string) error {
 	if globalDB != nil {
 		return nil // 已经初始化，直接返回
 	}
@@ -78,6 +95,10 @@ func InitDB(dsn string) error {
 
 // GetDB 获取全局数据库实例
 func GetDB() *DB {
+	if globalDB == nil {
+		InitDB(nil)
+	}
+
 	return globalDB
 }
 
@@ -95,6 +116,10 @@ func CloseDB() error {
 
 // CreateBangumi 创建番剧
 func (db *DB) CreateBangumi(bangumi *model.Bangumi) error {
+	// 加锁防止并发创建重复的 Bangumi
+	bangumiCreateMutex.Lock()
+	defer bangumiCreateMutex.Unlock()
+
 	// 对于 Bangumi 要进行一个查重, 主要是看其对应的 mikanid 和 tmdbid
 	// 先是看 mikanid 有的话
 	var oldBangumi model.Bangumi

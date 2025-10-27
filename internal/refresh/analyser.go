@@ -11,7 +11,7 @@ import (
 	"goto-bangumi/internal/parser/baseparser"
 )
 
-func OfficialTitleParse(torrent model.Torrent) (*model.Bangumi, error) {
+func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
 	bangumi := model.NewBangumi()
 	if torrent.Homepage != "" {
 		// 对于有 homepage 的, 默认进行一遍解析, 用以得到更准确的标题
@@ -26,8 +26,7 @@ func OfficialTitleParse(torrent model.Torrent) (*model.Bangumi, error) {
 			bangumi.Season = mikanInfo.Season
 		} else {
 			slog.Debug("mikan 解析失败", slog.String("种子名称", torrent.Name), slog.String("错误信息", err.Error()))
-			// TODO: 对网络错误和解析错误进行区分
-			// 网络错误直接返回,不做反面的解析
+			// 网络错误直接返回,不做后面的解析
 			if apperrors.IsNetworkError(err) {
 				return nil, err
 			}
@@ -92,11 +91,12 @@ func FilterTorrent(torrent *model.Torrent, bangumi *model.Bangumi) bool {
 			return true
 		}
 	}
-	slog.Debug("通过", slog.String("种子名称", torrent.Name), slog.String("包含关键词", bangumi.IncludeFilter))
+	slog.Debug("通过", slog.String("种子名称", torrent.Name))
 	return true
 }
 
-func TorrentToBangumi(torrent model.Torrent, rss model.RSSItem) (*model.Bangumi, error) {
+// TorrentToBangumi 从 torrent 解析出 bangumi 信息,只会反回网络错误
+func TorrentToBangumi(torrent *model.Torrent, rssLink string) (*model.Bangumi, error) {
 	bangumi, err := OfficialTitleParse(torrent)
 	metaInfo := baseparser.NewTitleMetaParse().Parse(torrent.Name)
 	// 为空在两种可能
@@ -121,19 +121,20 @@ func TorrentToBangumi(torrent model.Torrent, rss model.RSSItem) (*model.Bangumi,
 
 	bangumi.IncludeFilter = strings.Join(parser.ParserConfig.Include, ",")
 	bangumi.ExcludeFilter = strings.Join(parser.ParserConfig.Filter, ",")
-	bangumi.RRSSLink = rss.URL
+	bangumi.RRSSLink = rssLink
 	bangumi.EpisodeMetadata = append(bangumi.EpisodeMetadata, *metaInfo)
 	return bangumi, nil
 }
 
-func CreateBangumi(torrent model.Torrent, rss model.RSSItem) {
-	bangumi, err := TorrentToBangumi(torrent, rss)
+func createBangumi(torrent *model.Torrent, rssLink string) {
+	bangumi, err := TorrentToBangumi(torrent, rssLink)
 	if err != nil && apperrors.IsNetworkError(err) {
 		slog.Warn("网络错误，跳过该番剧的添加", slog.String("种子名称", torrent.Name), slog.String("错误信息", err.Error()))
 		return
 	}
 	// 对 mikan 部份错误进行处理
 
+	slog.Debug("createBangumi", bangumi)
 	if bangumi != nil {
 		if torrent.Homepage != "" && bangumi.MikanItem == nil {
 			// 这里对应 mikan 未添加的情况, 一般出现在季度初

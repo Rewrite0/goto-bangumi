@@ -1,7 +1,11 @@
 package refresh
 
 import (
+	"context"
+	"log/slog"
+
 	"goto-bangumi/internal/database"
+	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
 	"goto-bangumi/internal/parser/baseparser"
@@ -12,7 +16,7 @@ import (
 // -> 如果没有, 先过一下基础 filter, 然后调用 解析
 
 func getTorrents(url string) []*model.Torrent {
-	client:= network.NewRequestClient()
+	client := network.NewRequestClient()
 	torrents, _ := client.GetTorrents(url)
 	db := database.GetDB()
 	newTorrents, _ := db.CheckNewTorrents(torrents)
@@ -48,7 +52,23 @@ func FindNewBangumi(url string) {
 				newTorrents[raw.Title] = t
 			}
 		}
-		// 将种子进行解析
+	}
+	slog.Debug("有新番剧", "数量", len(newTorrents))
+	// 将种子进行解析
+	for _, t := range newTorrents {
+		go createBangumi(t, url)
 	}
 }
 
+func RefreshRSS(ctx context.Context, url string) {
+	torrents := pullRss(url)
+	db := database.GetDB()
+	for _, t := range torrents {
+		metaData, err := db.GetBangumiParseByTitle(t.Name)
+		if err != nil {
+		}
+		t.BangumiID = metaData.BangumiID
+		db.CreateTorrent(t)
+		download.DQueue.Add(ctx, t)
+	}
+}

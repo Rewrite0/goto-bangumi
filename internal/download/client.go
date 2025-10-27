@@ -29,11 +29,6 @@ type DownloadClient struct {
 
 var Client = &DownloadClient{}
 
-// GetDownloadClient 创建下载客户端
-// func GetDownloadClient() *DownloadClient {
-// 	// 创建下载器
-// 	return Client
-// }
 
 func (c *DownloadClient) Init(ctx context.Context, downloaderType string) error {
 	dl, err := downloader.NewDownloader(downloaderType)
