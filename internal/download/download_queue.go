@@ -7,26 +7,32 @@ package download
 import (
 	"context"
 	"log/slog"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	"goto-bangumi/internal/model"
 )
 
-var dqueue chan *model.Torrent = make(chan *model.Torrent, 100)
+var dqueue chan *model.TorrenBangumi = make(chan *model.TorrenBangumi, 100)
 
 type DownloadQueue struct {
-	Queue chan *model.Torrent
+	Queue chan *model.TorrenBangumi
 }
 
 var DQueue *DownloadQueue = &DownloadQueue{
 	Queue: dqueue,
 }
 
-func (dq *DownloadQueue) Add(ctx context.Context, torrent *model.Torrent) {
+func (dq *DownloadQueue) Add(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi) {
+	tb := &model.TorrenBangumi{
+		Bangumi: bangumi,
+		Torrent: torrent,
+	}
 	select {
 	case <-ctx.Done():
 		slog.Warn("下载队列已关闭，无法添加种子", "Name", torrent.Name)
-	case dq.Queue <- torrent:
+	case dq.Queue <- tb:
 	}
 }
 
@@ -44,10 +50,12 @@ func (dq *DownloadQueue) Clear() {
 func DownloadLoop(ctx context.Context, client *DownloadClient) {
 	for {
 		select {
-		case torrent := <-DQueue.Queue:
+		case tb := <-DQueue.Queue:
+			torrent := tb.Torrent
+			bangumi := tb.Bangumi
 			slog.Info("开始下载种子", "Name", torrent.Name)
-			//TODO: 生成保存路径
-			guid, err := client.Add(ctx, torrent.URL, "")
+			// TODO: 生成保存路径
+			guid, err := client.Add(ctx, torrent.URL, genSavePath(bangumi))
 			if err != nil {
 				slog.Error("下载种子失败", "Name", torrent.Name, "error", err)
 				continue
@@ -57,8 +65,18 @@ func DownloadLoop(ctx context.Context, client *DownloadClient) {
 		case <-ctx.Done():
 			slog.Info("下载队列退出")
 			// 清理队列
-			dqueue = make(chan *model.Torrent, 100)
+			DQueue.Clear()
 			return
 		}
 	}
+}
+
+func genSavePath(bangumi *model.Bangumi) string {
+	folder := bangumi.OfficialTitle
+	if bangumi.Year != "" {
+		folder += " (" + bangumi.Year + ")"
+	}
+	season := "Season " + strconv.Itoa(bangumi.Season)
+	fp := filepath.Join(folder, season)
+	return fp
 }

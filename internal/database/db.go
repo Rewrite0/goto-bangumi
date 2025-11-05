@@ -28,7 +28,7 @@ var bangumiCreateMutex sync.Mutex
 // NewDB 创建数据库连接
 func NewDB(dsn *string) (*DB, error) {
 	// 打开数据库连接，使用简单配置
-	var path string = filepath.Join(".", "data", "data.db")
+	var path string = filepath.Join("./data/data.db")
 	if dsn != nil {
 		path = *dsn
 	}
@@ -81,6 +81,7 @@ func (db *DB) Close() error {
 // ============ 单例模式相关方法 ============
 
 // InitDB 初始化全局数据库实例
+// 不同的地址主要是为了测试方便,正常使用是不用的
 func InitDB(dsn *string) error {
 	if globalDB != nil {
 		return nil // 已经初始化，直接返回

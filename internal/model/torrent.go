@@ -6,6 +6,14 @@ import (
 )
 
 
+// TorrenBangumi 种子和番剧关联模型
+// 用于下载时传递
+type TorrenBangumi struct {
+	Bangumi *Bangumi `json:"bangumi"`
+	Torrent *Torrent `json:"torrent"`
+}
+
+
 // Torrent 种子信息模型
 // Torrent 什么时候会创建 1. 发送到下载前, 然后下载后更新download 2. 重命名后更新 renamed字段
 // 种子要不要海报数据, 因为可能 collection 里没有
