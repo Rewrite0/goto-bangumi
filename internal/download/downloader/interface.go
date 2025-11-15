@@ -32,6 +32,9 @@ type BaseDownloader interface {
 	// GetTorrentFiles 获取种子的所有文件列表
 	GetTorrentFiles(hash string) ([]string, error)
 
+	// GetTorrentInfo 获取单个种子的信息
+	GetTorrentInfo(hash string)(*model.TorrentDownloadInfo,error)
+
 	// TorrentsInfo 获取种子信息列表
 	TorrentsInfo(statusFilter, category string, tag *string, limit int) ([]map[string]interface{}, error)
 

@@ -174,7 +174,7 @@ func (p *TitleMetaParser) getUntrustedEpisode() int {
 	if len(episodeInfo) > 0 {
 		return p.parseEpisode(episodeInfo, false)
 	}
-	return 0
+	return -1
 }
 
 // seasonInfoToSeason 从季度信息元组中提取季度号
@@ -574,6 +574,29 @@ func (p *TitleMetaParser) getAudioInfo() string {
 
 // Parse 解析标题，返回 Episode 信息
 func (p *TitleMetaParser) Parse(title string) *model.EpisodeMetadata {
+	meta := p.ParseEpisode(title)
+	// 下面的解析名字没有要放出去
+	group := meta.Group
+
+	nameEn, nameZh, nameJp := p.nameProcess()
+	titleRaw := firstNonEmptyString(nameZh, nameJp, nameEn)
+
+	if group == "" {
+		group = p.getGroup()
+		// 当 group 被包含在 title 中, 则清空 group
+		if group != "" && (strings.Contains(nameEn, group) || strings.Contains(nameZh, group) || strings.Contains(nameJp, group)) {
+			group = ""
+		}
+	}
+
+	meta.Title = titleRaw
+	meta.Group = group
+
+	return meta
+}
+
+// ParseEpisode 解析视频的集数
+func (p *TitleMetaParser) ParseEpisode(title string) *model.EpisodeMetadata {
 	p.rawTitle = title
 	p.title = title
 	// TODO: 这个函数可和 request_url.go 里的 processTitle 合并
@@ -620,13 +643,6 @@ func (p *TitleMetaParser) Parse(title string) *model.EpisodeMetadata {
 		season, seasonRaw = p.getUntrustedSeason()
 	}
 
-	nameEn, nameZh, nameJp := p.nameProcess()
-	titleRaw := firstNonEmptyString(nameZh, nameJp, nameEn)
-
-	if group == "" {
-		group = p.getGroup()
-	}
-
 	source := ""
 	if len(sourceInfo) > 0 {
 		source = sourceInfo[0]
@@ -643,7 +659,6 @@ func (p *TitleMetaParser) Parse(title string) *model.EpisodeMetadata {
 	}
 
 	return &model.EpisodeMetadata{
-		Title:      titleRaw,
 		Season:     season,
 		SeasonRaw:  seasonRaw,
 		Episode:    episode,

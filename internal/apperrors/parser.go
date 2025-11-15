@@ -2,7 +2,6 @@ package apperrors
 
 import "errors"
 
-
 // NetworkError 网络错误类型
 type NetworkError struct {
 	Err        error
@@ -17,20 +16,6 @@ func (e *NetworkError) Error() string {
 }
 
 func (e *NetworkError) Unwrap() error {
-	return e.Err
-}
-
-// AuthenticationError 认证错误类型（用户名或密码错误）
-type AuthenticationError struct {
-	Err      error
-	Username string
-}
-
-func (e *AuthenticationError) Error() string {
-	return "authentication error: " + e.Err.Error()
-}
-
-func (e *AuthenticationError) Unwrap() error {
 	return e.Err
 }
 
@@ -59,15 +44,6 @@ func IsParseError(err error) bool {
 	return errors.As(err, &parseErr)
 }
 
-// IsUnauthorizedError 判断是否为 401 未授权错误
-func IsUnauthorizedError(err error) bool {
-	var netErr *NetworkError
-	if errors.As(err, &netErr) {
-		return netErr.StatusCode == 401
-	}
-	return false
-}
-
 // GetStatusCode 从 NetworkError 中获取 HTTP 状态码，如果不是 NetworkError 则返回 0
 func GetStatusCode(err error) int {
 	var netErr *NetworkError
@@ -75,10 +51,4 @@ func GetStatusCode(err error) int {
 		return netErr.StatusCode
 	}
 	return 0
-}
-
-// IsAuthenticationError 判断是否为认证错误
-func IsAuthenticationError(err error) bool {
-	var authErr *NetworkError
-	return errors.As(err, &authErr) && authErr.StatusCode == 403
 }

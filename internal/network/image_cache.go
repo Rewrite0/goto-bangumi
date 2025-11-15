@@ -46,7 +46,11 @@ func base64ToURL(encoded string) (string, error) {
 	decoded, err := base64.URLEncoding.DecodeString(encoded)
 	if err != nil {
 		// 如果不是有效的 base64，直接返回原字符串
-		return encoded, nil
+		return "", fmt.Errorf("failed to decode base64 string: %w", err)
+	}
+	// 如果不是有效的 URL，返回错误
+	if !strings.HasPrefix(string(decoded), "http") {
+		return "", fmt.Errorf("decoded string is not a valid URL")
 	}
 	return string(decoded), nil
 }
@@ -62,6 +66,11 @@ func (ic *ImageCache) SaveImage(url string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to download image: %w", err)
 	}
+	// TODO:检测是不是图片以及是不是有效数据
+	if len(imgData) == 0 {
+		return nil, fmt.Errorf("downloaded image is empty")
+	}
+
 
 	// Save to file
 	if err := os.WriteFile(imagePath, imgData, 0o644); err != nil {
@@ -92,7 +101,8 @@ func (ic *ImageCache) LoadImage(imgPath string) ([]byte, error) {
 	// 将 base64 解码回 URL
 	decodedURL, err := base64ToURL(imgPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 path: %w", err)
+		slog.Debug("[ImageCache] Decoding as URL failed, treating as direct URL", "error", err)
+		return nil, err
 	}
 
 	// 如果解码后不是有效 URL，则报错

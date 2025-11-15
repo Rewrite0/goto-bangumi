@@ -17,32 +17,41 @@ import (
 
 // DownloadClient 下载客户端，负责限流和登录管理
 type DownloadClient struct {
-	Downloader downloader.BaseDownloader
-	limiter    *rate.Limiter
+	Downloader     downloader.BaseDownloader
+	limiter        *rate.Limiter
+	SavePath       string
+	downloaderType string
 
 	// 登录控制
-	loginDone chan struct{} // 通知登录完成
-	loginReq  chan struct{} // 是否需要登录
+	loginDone  chan struct{} // 通知登录完成
+	loginReq   chan struct{} // 是否需要登录
+	loginError chan struct{} // 是否正在登录
 }
 
 // Client 为一个全局的下载客户端实例
 
 var Client = &DownloadClient{}
 
+func (c *DownloadClient) Init(config *model.DownloaderConfig) error {
+	c.SavePath = config.SavePath
 
-func (c *DownloadClient) Init(ctx context.Context, downloaderType string) error {
-	dl, err := downloader.NewDownloader(downloaderType)
-	if err != nil {
-		return fmt.Errorf("创建下载器失败: %w", err)
+	downloaderType := strings.ToLower(config.Type)
+	if c.downloaderType != downloaderType {
+		c.downloaderType = downloaderType
+		dl, err := downloader.NewDownloader(c.downloaderType)
+		if err != nil {
+			return fmt.Errorf("创建下载器失败: %w", err)
+		}
+		c.Downloader = dl
+
+		// 从 downloader 获取 API interval（每个 downloader 自己定义）
+		interval := dl.GetInterval()
+
+		// 创建限流器：rate.Every 将间隔转换为速率
+		c.limiter = rate.NewLimiter(rate.Every(time.Duration(interval)*time.Millisecond), 1)
 	}
-	c.Downloader = dl
-
-	// 从 downloader 获取 API interval（每个 downloader 自己定义）
-	interval := dl.GetInterval()
-
-	// 创建限流器：rate.Every 将间隔转换为速率
-	c.limiter = rate.NewLimiter(rate.Every(time.Duration(interval)*time.Millisecond), 1)
 	// 初始化登录控制通道
+	c.loginError = make(chan struct{})
 	c.loginReq = make(chan struct{}, 1) // 缓冲区为1，避免重复登录请求
 	c.loginReq <- struct{}{}            // 初始时请求登录
 	c.loginDone = make(chan struct{})
@@ -93,8 +102,9 @@ func (c *DownloadClient) Login(ctx context.Context) {
 					time.Sleep(30 * time.Second)
 					// 重新放入登录请求（阻塞式，确保重试）
 					c.RequestLogin()
-				} else if apperrors.IsAuthenticationError(err) {
+				} else if apperrors.IsDownloadAuthenticationError(err) || apperrors.IsDownloadForbiddenError(err) {
 					slog.Error("下载客户端登录失败，认证错误，请检查配置", "error", err)
+					close(c.loginError)
 					// 这时不应该再自动重试了, resetLogin 也不该再触发登陆
 					return
 				}
@@ -123,6 +133,8 @@ func (c *DownloadClient) ensureLogin(ctx context.Context) error {
 		return ctx.Err()
 	case <-c.loginDone:
 		return nil
+	case <-c.loginError:
+		return &apperrors.DownloadLoginError{Err: fmt.Errorf("下载协程已退出")}
 	// 最多只等待10秒，避免长时间阻塞
 	case <-time.After(10 * time.Second):
 		return fmt.Errorf("等待登录超时")
@@ -169,7 +181,7 @@ func (c *DownloadClient) Add(ctx context.Context, url, savePath string) (string,
 	hash, err := c.Downloader.Add(torrentInfo, savePath)
 	// 4. 如果是认证错误，重置登录状态
 	if err != nil {
-		if apperrors.IsAuthenticationError(err) {
+		if apperrors.IsDownloadAuthenticationError(err) {
 			c.resetLogin()
 		}
 		return "", err
@@ -193,7 +205,7 @@ func (c *DownloadClient) Delete(ctx context.Context, hashes []string) error {
 	}
 
 	_, err := c.Downloader.Delete(hashes)
-	if err != nil && apperrors.IsAuthenticationError(err) {
+	if err != nil && apperrors.IsDownloadAuthenticationError(err) {
 		c.resetLogin()
 	}
 
@@ -211,7 +223,7 @@ func (c *DownloadClient) Rename(ctx context.Context, hash, oldPath, newPath stri
 	}
 
 	_, err := c.Downloader.Rename(hash, oldPath, newPath)
-	if err != nil && apperrors.IsAuthenticationError(err) {
+	if err != nil && apperrors.IsDownloadAuthenticationError(err) {
 		c.resetLogin()
 	}
 
@@ -229,7 +241,7 @@ func (c *DownloadClient) Move(ctx context.Context, hashes []string, location str
 	}
 
 	_, err := c.Downloader.Move(hashes, location)
-	if err != nil && apperrors.IsAuthenticationError(err) {
+	if err != nil && apperrors.IsDownloadAuthenticationError(err) {
 		c.resetLogin()
 	}
 
@@ -247,6 +259,17 @@ func (c *DownloadClient) GetTorrentFiles(ctx context.Context, hash string) ([]st
 	}
 
 	return c.Downloader.GetTorrentFiles(hash)
+}
+
+func (c *DownloadClient) GetTorrentInfo(ctx context.Context, hash string) (*model.TorrentDownloadInfo, error) {
+	if err := c.ensureLogin(ctx); err != nil {
+		return nil, fmt.Errorf("登录失败: %w", err)
+	}
+
+	if err := c.limiter.Wait(ctx); err != nil {
+		return nil, err
+	}
+	return c.Downloader.GetTorrentInfo(hash)
 }
 
 // TorrentsInfo 获取种子信息列表

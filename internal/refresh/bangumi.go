@@ -69,6 +69,6 @@ func RefreshRSS(ctx context.Context, url string) {
 		}
 		t.BangumiID = metaData.BangumiID
 		db.CreateTorrent(t)
-		download.DQueue.Add(ctx, t)
+		download.DQueue.Add(ctx, t, t.Bangumi)
 	}
 }

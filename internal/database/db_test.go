@@ -6,7 +6,8 @@ import (
 )
 
 func TestNewDB(t *testing.T) {
-	_, err := NewDB(":memory:")
+	dbPath := ":memory:"
+	_, err := NewDB(&dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
@@ -17,7 +18,8 @@ func TestAddBangumi(t *testing.T) {
 	// 1. 主要是调用 FindNewBangumi, 聚合以及日常刷新
 	// 2. 其次就是非聚合的时候, 前端会点一个让我们去找新的番剧
 	// 3. 通过rss_link 来连接吧, rss不一定会加进去
-	db, err := NewDB("./test.db")
+	testdb := "./test.db"
+	db, err := NewDB(&testdb)
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}

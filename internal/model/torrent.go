@@ -6,9 +6,9 @@ import (
 )
 
 
-// TorrenBangumi 种子和番剧关联模型
+// TorrentBangumi 种子和番剧关联模型
 // 用于下载时传递
-type TorrenBangumi struct {
+type TorrentBangumi struct {
 	Bangumi *Bangumi `json:"bangumi"`
 	Torrent *Torrent `json:"torrent"`
 }

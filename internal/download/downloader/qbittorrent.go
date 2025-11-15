@@ -106,19 +106,22 @@ func (d *QBittorrentDownloader) Auth() (bool, error) {
 	}
 
 	if resp.StatusCode() == 200 {
-		if strings.Contains(resp.String(), "Ok.") {
-			return true, nil
-		}
 		if strings.Contains(resp.String(), "Fails") {
 			// 认证错误：用户名或密码错误
 			slog.Error("[qBittorrent] 登录失败，请检查用户名/密码", "username", d.config.Username)
-			return false, &apperrors.NetworkError{Err: fmt.Errorf("用户名或密码错误"), StatusCode: 403}
+			return false, &apperrors.DownloadAuthenticationError{
+				Err:  fmt.Errorf("用户名或密码错误"),
+				Name: d.config.Username,
+			}
 		}
+		return true, nil
 	}
 
 	if resp.StatusCode() == 403 {
 		slog.Error("[qBittorrent] 您的IP已被qBittorrent封禁，请解除封禁（或重启qBittorrent）后重试")
-		return false, &apperrors.NetworkError{Err: fmt.Errorf("IP被封禁"), StatusCode: 403}
+		return false, &apperrors.DownloadForbiddenError{
+			Err: fmt.Errorf("IP被封禁"),
+		}
 	}
 
 	return false, &apperrors.NetworkError{Err: fmt.Errorf("登录失败：状态码 %d", resp.StatusCode()), StatusCode: resp.StatusCode()}
@@ -217,28 +220,27 @@ func (d *QBittorrentDownloader) GetTorrentFiles(hash string) ([]string, error) {
 
 // TorrentInfo 获取单个种子详细信息
 // 返回 (连接状态, 种子信息, error)
-// 连接状态: true 表示连上了 client, false 表示没连上
 // 种子信息: 成功时返回 TorrentDownloadInfo, 失败返回 nil
-func (d *QBittorrentDownloader) GetTorrentInfo(hash string) (bool, *model.TorrentDownloadInfo, error) {
+func (d *QBittorrentDownloader) GetTorrentInfo(hash string) (*model.TorrentDownloadInfo, error) {
 	resp, err := d.client.R().
 		SetQueryParam("hash", hash).
 		Get(QBAPI["properties"])
 	if err != nil {
 		// 连接错误
 		slog.Error("[qBittorrent] torrent_info 连接错误", "error", err)
-		return false, nil, err
+		return nil, err
 	}
 
 	// 404 表示种子不存在但连接正常
 	if resp.StatusCode() == 404 {
 		slog.Warn("[qBittorrent] 种子不存在", "hash", hash)
-		return true, nil, nil
+		return nil, nil
 	}
 
 	if resp.StatusCode() == 200 {
 		var props model.QBTorrentProperties
 		if err := json.Unmarshal(resp.Body(), &props); err != nil {
-			return true, nil, fmt.Errorf("解析种子信息失败: %w", err)
+			return nil, fmt.Errorf("解析种子信息失败: %w", err)
 		}
 
 		slog.Debug("[qBittorrent] 种子信息", "hash", hash, "eta", props.Eta, "save_path", props.SavePath, "completion_date", props.CompletionDate)
@@ -255,11 +257,11 @@ func (d *QBittorrentDownloader) GetTorrentInfo(hash string) (bool, *model.Torren
 			Completed: completionDate,
 		}
 
-		return true, result, nil
+		return result, nil
 	}
 
 	d.handleException(err, resp, "torrent_info")
-	return false, nil, fmt.Errorf("获取种子信息失败：状态码 %d", resp.StatusCode())
+	return nil, fmt.Errorf("获取种子信息失败：状态码 %d", resp.StatusCode())
 }
 
 // TorrentsInfo 获取种子信息列表
