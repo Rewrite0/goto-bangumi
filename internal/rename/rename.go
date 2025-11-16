@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
-	"goto-bangumi/internal/parser/baseparser"
+	"goto-bangumi/internal/notification"
+	"goto-bangumi/internal/parser"
 )
 
 // Rename renames (moves) oldpath to newpath.
@@ -47,7 +49,7 @@ func getBangumi(torrent *model.Torrent) (*model.Bangumi, error) {
 		slog.Error("[rename] Failed to get relative path", "name", torrent.Name, "path", savePath, "error", err)
 		return nil, err
 	}
-	pathInfo := baseparser.ParsePath(relativePath)
+	pathInfo := parser.ParsePath(relativePath)
 	// 不解析非标准的路径
 	if pathInfo == nil {
 		slog.Error("[rename] Failed to parse path info", "name", torrent.Name, "relativePath", relativePath)
@@ -85,17 +87,31 @@ func Rename(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi)
 	for _, filePath := range fileList {
 		// 从 file_path 中提取出文件名, 通过 filepath
 		torrentName := filepath.Base(filePath)
-		newPath := GenPath(torrentName, bangumi)
+		if parser.IsPoint5(torrentName) {
+			slog.Info("[rename] Skip renaming for 0.5 episode file", "file", torrentName)
+			continue
+		}
+		metaInfo, newPath := GenPath(torrentName, bangumi)
 		if newPath == filePath {
 			slog.Info("[rename] File path is the same, no need to rename", "path", filePath)
 			continue
 		}
 
+		// 也不用想着要加速什么的, 慢慢来就好了, 主要的还是 api 调用的时间
 		err := rename(ctx, torrent.DownloadUID, filePath, newPath)
 		if err != nil {
 			slog.Error("[rename] Failed to rename file", "oldpath", filePath, "newpath", newPath, "error", err)
 			return
 		}
+
+		Nclient := notification.NotificationClient
+		msg := &model.Message{
+			Title:   bangumi.OfficialTitle,
+			Season:  strconv.Itoa(bangumi.Season),
+			Episode: strconv.Itoa(metaInfo.Episode),
+			PosterLink: bangumi.PosterLink,
+		}
+		Nclient.Send(msg)
 	}
 }
 
@@ -104,12 +120,14 @@ func rename(ctx context.Context, hash, oldpath, newpath string) error {
 }
 
 // GenPath 生成新的文件路径,形如 败犬女主太多了 (2024) S01E02 - Ani.mp4
-func GenPath(torrentName string, bangumi *model.Bangumi) string {
-	metaInfo := baseparser.NewTitleMetaParse().ParseEpisode(torrentName)
+func GenPath(torrentName string, bangumi *model.Bangumi) (*model.EpisodeMetadata, string) {
+	metaInfo := parser.NewTitleMetaParse().ParseEpisode(torrentName)
 	episode := metaInfo.Episode
-	if episode == 0 {
+	if episode == -1 {
 		slog.Error("[rename] Failed to parse episode from torrent name", "torrentName", torrentName)
+		return nil, ""
 	}
+
 	// offset, 默认是0
 	episode += bangumi.Offset
 
@@ -135,5 +153,5 @@ func GenPath(torrentName string, bangumi *model.Bangumi) string {
 	// 添加文件扩展名
 	newPath += ext
 	// TODO: 字幕文件还要加 chs, cht 等标识
-	return newPath
+	return metaInfo, newPath
 }

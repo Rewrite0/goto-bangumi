@@ -1,5 +1,5 @@
 // Package baseparser 包含对标题的基本解析功能, 额外提供 tmdb 和 mikan 的解析功能, TODO:bangumi解析未做
-package baseparser
+package parser
 
 import (
 	"strconv"
@@ -673,11 +673,6 @@ func (p *TitleMetaParser) ParseEpisode(title string) *model.EpisodeMetadata {
 	}
 }
 
-// RawParse 解析原始视频标题
-func RawParse(raw string) *model.EpisodeMetadata {
-	parser := NewTitleMetaParse()
-	return parser.Parse(raw)
-}
 
 // IsV1 判断是否是 v1 番剧
 func IsV1(title string) bool {

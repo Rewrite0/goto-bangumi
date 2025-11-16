@@ -158,7 +158,7 @@ func (c *DownloadClient) Add(ctx context.Context, url, savePath string) (string,
 
 	if !strings.HasPrefix(url, "magnet:") {
 		// 下载种子文件
-		networkClient := network.NewRequestClient()
+		networkClient := network.GetRequestClient()
 		respBody, err := networkClient.Get(url)
 		if err != nil {
 			return "", fmt.Errorf("下载种子文件失败: %w", err)

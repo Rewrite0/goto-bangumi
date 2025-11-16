@@ -1,4 +1,4 @@
-package baseparser
+package parser
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ func NewMikanParser() *MikanParser {
 
 func (p *MikanParser) Parse(homepage string) (*model.MikanItem, error) {
 	// Fetch HTML content from the URL
-	client := network.NewRequestClient()
+	client := network.GetRequestClient()
 	content, err := client.Get(homepage)
 	if err != nil {
 		// network 层已经返回 NetworkError，直接传递
@@ -35,7 +35,7 @@ func (p *MikanParser) Parse(homepage string) (*model.MikanItem, error) {
 
 func (p *MikanParser) PosterParse(homepage string) (string, error) {
 	// Fetch HTML content from the URL
-	client := network.NewRequestClient()
+	client := network.GetRequestClient()
 	content, err := client.Get(homepage)
 	if err != nil {
 		return "", err

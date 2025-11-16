@@ -42,9 +42,9 @@ func Init(config *model.ProxyConfig) {
 	}
 }
 
-// NewRequestClient 返回全局共享的 RequestClient 实例
+// GetRequestClient 返回全局共享的 RequestClient 实例
 // 所有 HTTP 请求应使用此实例以共享连接池和缓存
-func NewRequestClient() *RequestClient {
+func GetRequestClient() *RequestClient {
 	return defaultClient
 }
 

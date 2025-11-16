@@ -1,4 +1,4 @@
-package baseparser
+package parser
 
 import (
 	"testing"
@@ -185,7 +185,8 @@ func TestRawParser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := RawParse(tt.content)
+			p := NewTitleMetaParse()
+			info := p.Parse(tt.content)
 			if info == nil {
 				t.Fatal("parser returned nil")
 			}

@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 func TestGetRSS(t *testing.T) {
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=583"
 
-	netClient := NewRequestClient()
+	netClient := GetRequestClient()
 	rss, err := netClient.GetRSS(rssURL)
 	if err != nil {
 		t.Fatalf("Error fetching RSS: %v", err)
@@ -66,7 +66,7 @@ func TestGetRSS(t *testing.T) {
 func TestGetRSSTitle(t *testing.T) {
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=583"
 
-	netClient := NewRequestClient()
+	netClient := GetRequestClient()
 	title, err := netClient.GetRSSTitle(rssURL)
 	if err != nil {
 		t.Errorf("Error fetching RSS title: %v", err)
@@ -80,7 +80,7 @@ func TestGetRSSTitle(t *testing.T) {
 func TestGetTorrents(t *testing.T) {
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=583"
 
-	netClient := NewRequestClient()
+	netClient := GetRequestClient()
 	torrents, err := netClient.GetTorrents(rssURL)
 	if err != nil {
 		t.Fatalf("Error fetching torrents: %v", err)

@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"goto-bangumi/internal/model"
-	"goto-bangumi/internal/parser/baseparser"
 )
 
 var ParserConfig *model.RssParserConfig
@@ -18,22 +17,23 @@ func Init(config *model.RssParserConfig) {
 	if config != nil {
 		ParserConfig = config
 	}
+	InitTmdb(config.TmdbAPIKey)
 }
 
 type RawParse struct{}
 
 func (p *RawParse) Parse(title string) *model.Bangumi {
 	// language := "zh"
-	meta_parser := baseparser.NewTitleMetaParse()
-	episode := meta_parser.Parse(title)
+	metaParser := NewTitleMetaParse()
+	episode := metaParser.Parse(title)
 	if episode.Episode == -1 {
 		return nil
 	}
 	// 依据 language 选择标题
-	var official_title string
+	var officialTitle string
 	season := episode.Season
 	return &model.Bangumi{
-		OfficialTitle: official_title,
+		OfficialTitle: officialTitle,
 		Year:          episode.Year,
 		Season:        season,
 		EpsCollect:    false,

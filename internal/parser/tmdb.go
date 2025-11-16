@@ -1,4 +1,4 @@
-package baseparser
+package parser
 
 import (
 	"fmt"
@@ -35,7 +35,7 @@ var Language = map[string]string{
 	"en": "en-US",
 }
 
-func Init(key string) {
+func InitTmdb(key string) {
 	tmdbKey = key
 }
 
@@ -73,7 +73,7 @@ func (p *TMDBParser) TMDBSearch(keyword string) ([]model.ShowInfo, error) {
 	slog.Debug("[TMDB] Searching TV shows", "keyword", keyword, "url", url)
 
 	var searchResult model.SearchResult
-	client := network.NewRequestClient()
+	client := network.GetRequestClient()
 	if err := client.GetJSONTo(url, &searchResult); err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (p *TMDBParser) TMDBInfo(id int, language string) (*model.TVShow, error) {
 	slog.Debug("[TMDB] Fetching TV show info", "id", id, "language", language)
 
 	var tvShow model.TVShow
-	client := network.NewRequestClient()
+	client := network.GetRequestClient()
 	if err := client.GetJSONTo(url, &tvShow); err != nil {
 		return nil, err
 	}

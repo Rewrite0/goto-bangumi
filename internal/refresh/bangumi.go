@@ -16,7 +16,7 @@ import (
 // -> 如果没有, 先过一下基础 filter, 然后调用 解析
 
 func getTorrents(url string) []*model.Torrent {
-	client := network.NewRequestClient()
+	client := network.GetRequestClient()
 	torrents, _ := client.GetTorrents(url)
 	db := database.GetDB()
 	newTorrents, _ := db.CheckNewTorrents(torrents)
@@ -33,7 +33,7 @@ func pullRss(url string) []*model.Torrent {
 
 // FindNewBangumi 从 rss 里面看看没有没新的番剧
 func FindNewBangumi(url string) {
-	netClient := network.NewRequestClient()
+	netClient := network.GetRequestClient()
 	torrents, _ := netClient.GetTorrents(url)
 	db := database.GetDB()
 	newTorrents := make(map[string]*model.Torrent, 10)

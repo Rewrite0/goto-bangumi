@@ -9,31 +9,16 @@ import (
 	"strings"
 )
 
-// ImageCache manages image downloading and local caching
-type ImageCache struct {
-	client    *RequestClient
-	cacheDir  string
-	posterDir string
-}
+var (
+	dataDir   = "data"
+	posterDir = filepath.Join(dataDir, "posters")
+)
 
-// NewImageCache creates a new image cache manager
-func NewImageCache(client *RequestClient, dataDir string) (*ImageCache, error) {
-	if dataDir == "" {
-		dataDir = "data"
-	}
-
-	posterDir := filepath.Join(dataDir, "posters")
-
+func init() {
 	// 创建海报目录（如果不存在）
 	if err := os.MkdirAll(posterDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create poster directory: %w", err)
+		slog.Error("failed to create poster directory", "error", err)
 	}
-
-	return &ImageCache{
-		client:    client,
-		cacheDir:  dataDir,
-		posterDir: posterDir,
-	}, nil
 }
 
 // urlToBase64 converts URL to base64 encoded string for filename (reversible)
@@ -56,13 +41,13 @@ func base64ToURL(encoded string) (string, error) {
 }
 
 // SaveImage downloads and saves an image to cache
-func (ic *ImageCache) SaveImage(url string) ([]byte, error) {
+func SaveImage(url string) ([]byte, error) {
 	// Generate base64 encoded filename
 	imgEncoded := urlToBase64(url)
-	imagePath := filepath.Join(ic.posterDir, imgEncoded)
+	imagePath := filepath.Join(posterDir, imgEncoded)
 
 	// Download image
-	imgData, err := ic.client.Get(url)
+	imgData, err := defaultClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download image: %w", err)
 	}
@@ -70,7 +55,6 @@ func (ic *ImageCache) SaveImage(url string) ([]byte, error) {
 	if len(imgData) == 0 {
 		return nil, fmt.Errorf("downloaded image is empty")
 	}
-
 
 	// Save to file
 	if err := os.WriteFile(imagePath, imgData, 0o644); err != nil {
@@ -82,13 +66,13 @@ func (ic *ImageCache) SaveImage(url string) ([]byte, error) {
 }
 
 // LoadImage 从缓存加载图片，如果不存在则下载
-func (ic *ImageCache) LoadImage(imgPath string) ([]byte, error) {
+func LoadImage(imgPath string) ([]byte, error) {
 	// Check if it's a URL
 	if strings.HasPrefix(imgPath, "http") {
 		imgPath = urlToBase64(imgPath)
 	}
 
-	imagePath := filepath.Join(ic.posterDir, imgPath)
+	imagePath := filepath.Join(posterDir, imgPath)
 
 	// 如果文件存在，直接读取
 	if data, err := os.ReadFile(imagePath); err == nil {
@@ -110,7 +94,7 @@ func (ic *ImageCache) LoadImage(imgPath string) ([]byte, error) {
 		return nil, fmt.Errorf("cannot download image: invalid URL from path %s", imgPath)
 	}
 
-	imgData, err := ic.SaveImage(decodedURL)
+	imgData, err := SaveImage(decodedURL)
 	if err != nil {
 		return nil, err
 	}
