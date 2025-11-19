@@ -33,7 +33,7 @@ func (t *TelegramNotifier) Init(config *model.NotificationConfig)  {
 	t.config.Token = config.Token
 	t.config.ChatID = config.ChatID
 	t.config.BaseURL = fmt.Sprintf("https://api.telegram.org/bot%s/", t.config.Token)
-	slog.Info("[Telegram] Telegram 通知器初始化成功")
+	slog.Debug("[Telegram] Telegram 通知器初始化成功")
 }
 
 // PostMsg 发送 Telegram 通知

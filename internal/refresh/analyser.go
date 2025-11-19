@@ -8,7 +8,6 @@ import (
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/parser"
-	"goto-bangumi/internal/parser/baseparser"
 )
 
 func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
@@ -16,7 +15,7 @@ func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
 	if torrent.Homepage != "" {
 		// 对于有 homepage 的, 默认进行一遍解析, 用以得到更准确的标题
 		// 就算是 mikan 的, 也不一定有 homepage
-		mikanParse := baseparser.NewMikanParser()
+		mikanParse := parser.NewMikanParser()
 		mikanInfo, err := mikanParse.Parse(torrent.Homepage)
 		// 这里要看看是网络问题还是解析问题, 不过感觉有 homepage ，那就一定是网络问题
 		if err == nil {
@@ -35,14 +34,14 @@ func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
 	if bangumi.Parse == "bangumi" {
 		// Bangumi 解析, 没有做
 	} else {
-		tmdbParse := baseparser.NewTMDBParse()
+		tmdbParse := parser.NewTMDBParse()
 		var title string
 		if bangumi.OfficialTitle != "" {
 			// 优先使用 mikan 解析到的标题
 			title = bangumi.OfficialTitle
 		} else {
 			// 否则使用种子标题
-			title = baseparser.NewTitleMetaParse().Parse(torrent.Name).Title
+			title = parser.NewTitleMetaParse().Parse(torrent.Name).Title
 		}
 
 		tmdbInfo, err := tmdbParse.TMDBParse(title, "zh")
@@ -98,7 +97,7 @@ func FilterTorrent(torrent *model.Torrent, bangumi *model.Bangumi) bool {
 // TorrentToBangumi 从 torrent 解析出 bangumi 信息,只会反回网络错误
 func TorrentToBangumi(torrent *model.Torrent, rssLink string) (*model.Bangumi, error) {
 	bangumi, err := OfficialTitleParse(torrent)
-	metaInfo := baseparser.NewTitleMetaParse().Parse(torrent.Name)
+	metaInfo := parser.NewTitleMetaParse().Parse(torrent.Name)
 	// 为空在两种可能
 	// 1. torrent 的名字不太对, 当torrent 名字不对而没法解析的时候, 要显示bangumi
 	// 2. 网络的问题 , 这会导致永远无法出来这个番剧,这是不对的

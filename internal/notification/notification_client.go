@@ -4,9 +4,9 @@ package notification
 import (
 	"log/slog"
 
+	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
-
 )
 
 type Client struct {
@@ -20,7 +20,6 @@ func (c *Client) Init(config *model.NotificationConfig) {
 	case "telegram":
 		c.notifier = NewTelegramNotifier()
 		c.notifier.Init(config)
-		slog.Info("[Notification] Telegram notifier initialized")
 	default:
 		slog.Warn("[Notification] Unknown notification type, no notifier initialized", "type", config.Type)
 	}
@@ -64,4 +63,10 @@ func (c *Client) Send(message *model.Message) {
 		return
 	}
 	slog.Debug("[Notification] Sending notification", "title", message.Title, "episode", message.Episode)
+}
+
+func InitModule() {
+	c :=conf.GetConfigOrDefault("notification", model.NewNotificationConfig())
+	NotificationClient.Init(c)
+
 }

@@ -3,6 +3,7 @@ package parser
 import (
 	"strings"
 
+	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/model"
 )
 
@@ -10,7 +11,7 @@ var ParserConfig *model.RssParserConfig
 
 func init() {
 	// 避免没有调用Init时报错
-	ParserConfig = &model.RssParserConfig{}
+	ParserConfig = model.NewRssParserConfig()
 }
 
 func Init(config *model.RssParserConfig) {
@@ -18,6 +19,11 @@ func Init(config *model.RssParserConfig) {
 		ParserConfig = config
 	}
 	InitTmdb(config.TmdbAPIKey)
+}
+
+func InitModule(){
+	c := conf.GetConfigOrDefault("parser", model.NewRssParserConfig())
+	Init(c)
 }
 
 type RawParse struct{}

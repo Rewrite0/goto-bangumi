@@ -251,7 +251,7 @@ func (db *DB) CheckNewTorrents(torrents []*model.Torrent) ([]*model.Torrent, err
 		}
 
 		// 不存在或未下载的种子
-		if existing == nil || !existing.Downloaded {
+		if existing == nil || existing.Downloaded ==0 {
 			newTorrents = append(newTorrents, torrent)
 		}
 	}

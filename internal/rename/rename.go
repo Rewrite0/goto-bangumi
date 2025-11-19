@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
@@ -154,4 +155,9 @@ func GenPath(torrentName string, bangumi *model.Bangumi) (*model.EpisodeMetadata
 	newPath += ext
 	// TODO: 字幕文件还要加 chs, cht 等标识
 	return metaInfo, newPath
+}
+
+func InitModule() {
+	c:= conf.GetConfigOrDefault("rename", model.NewBangumiRenameConfig())
+	Init(c)
 }

@@ -1,3 +1,4 @@
+// Package download 提供下载客户端，负责限流和登录管理
 package download
 
 import (
@@ -9,6 +10,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/download/downloader"
 	"goto-bangumi/internal/model"
@@ -32,16 +34,13 @@ type DownloadClient struct {
 
 var Client = &DownloadClient{}
 
-func (c *DownloadClient) Init(config *model.DownloaderConfig) error {
+func (c *DownloadClient) Init(config *model.DownloaderConfig)  {
 	c.SavePath = config.SavePath
 
 	downloaderType := strings.ToLower(config.Type)
 	if c.downloaderType != downloaderType {
 		c.downloaderType = downloaderType
-		dl, err := downloader.NewDownloader(c.downloaderType)
-		if err != nil {
-			return fmt.Errorf("创建下载器失败: %w", err)
-		}
+		dl := downloader.NewDownloader(c.downloaderType)
 		c.Downloader = dl
 
 		// 从 downloader 获取 API interval（每个 downloader 自己定义）
@@ -50,13 +49,13 @@ func (c *DownloadClient) Init(config *model.DownloaderConfig) error {
 		// 创建限流器：rate.Every 将间隔转换为速率
 		c.limiter = rate.NewLimiter(rate.Every(time.Duration(interval)*time.Millisecond), 1)
 	}
+	c.Downloader.Init(config)
 	// 初始化登录控制通道
 	c.loginError = make(chan struct{})
 	c.loginReq = make(chan struct{}, 1) // 缓冲区为1，避免重复登录请求
 	c.loginReq <- struct{}{}            // 初始时请求登录
 	c.loginDone = make(chan struct{})
 	close(c.loginDone) // 初始时表示未登录
-	return nil
 }
 
 func (c *DownloadClient) Check(ctx context.Context, hash string) (string, error) {
@@ -296,4 +295,12 @@ func (c *DownloadClient) resetLogin() {
 	default:
 		// do nothing
 	}
+}
+
+func (c *DownloadClient) GetConfig() *model.DownloaderConfig {
+	return conf.GetConfigOrDefault("downloader", model.NewDownloaderConfig())
+}
+func InitModule() {
+	c := conf.GetConfigOrDefault("downloader", model.NewDownloaderConfig())
+	Client.Init(c)
 }

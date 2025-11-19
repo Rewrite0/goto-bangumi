@@ -8,7 +8,7 @@ import (
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
-	"goto-bangumi/internal/parser/baseparser"
+	"goto-bangumi/internal/parser"
 )
 
 // 流程为: 取种子列表 -> 对比数据库中已有的种子 -> 返回新增的种子 -> 检查是否有对应的番剧信息
@@ -47,7 +47,7 @@ func FindNewBangumi(url string) {
 		if err != nil && FilterTorrent(t, nil) {
 			// 要进行一个去重, 一些torrent 是没必要都解析的
 			// 进行 metaparser 解析
-			raw := baseparser.NewTitleMetaParse().Parse(t.Name)
+			raw := parser.NewTitleMetaParse().Parse(t.Name)
 			if raw != nil {
 				newTorrents[raw.Title] = t
 			}

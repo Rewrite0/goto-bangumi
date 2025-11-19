@@ -1,19 +1,40 @@
 package model
 
-type Config struct {
-	Program       ProgramConfig       `json:"program" mapstructure:"program"`
-	Downloader    DownloaderConfig    `json:"downloader" mapstructure:"downloader"`
-	RssParse      RssParserConfig     `json:"rss_parser" mapstructure:"rss_parser"`
-	BangumiManage BangumiRenameConfig `json:"bangumi_manage" mapstructure:"bangumi_manage"`
-	Log           LogConfig           `json:"log" mapstructure:"log"`
-	Proxy         ProxyConfig         `json:"proxy" mapstructure:"proxy"`
-	Notification  NotificationConfig  `json:"notification" mapstructure:"notification"`
-	Password      string              `json:"password" mapstructure:"password"`
-}
+//Config 总配置结构体, 构成一个基础的配置, 但实际用的时候, 还是用的子配置
+// type Config struct {
+// 	Program       ProgramConfig       `json:"program" mapstructure:"program"`
+// 	Downloader    DownloaderConfig    `json:"downloader" mapstructure:"downloader"`
+// 	RssParse      RssParserConfig     `json:"rss_parser" mapstructure:"rss_parser"`
+// 	BangumiManage BangumiRenameConfig `json:"bangumi_manage" mapstructure:"bangumi_manage"`
+// 	Proxy         ProxyConfig         `json:"proxy" mapstructure:"proxy"`
+// 	Notification  NotificationConfig  `json:"notification" mapstructure:"notification"`
+// }
+//
+// func NewConfig() *Config {
+// 	return &Config{
+// 		Program:       *NewProgramConfig(),
+// 		Downloader:    *NewDownloaderConfig(),
+// 		RssParse:      *NewRssParserConfig(),
+// 		BangumiManage: *NewBangumiRenameConfig(),
+// 		Proxy:         *NewProxyConfig(),
+// 		Notification:  *NewNotificationConfig(),
+// 	}
+// }
 
 type ProgramConfig struct {
-	RssTime   int `json:"rss_time" mapstructure:"rss_time"`
-	WebuiPort int `json:"webui_port" mapstructure:"webui_port"`
+	RssTime   int    `json:"rss_time" mapstructure:"rss_time"`
+	WebuiPort int    `json:"webui_port" mapstructure:"webui_port"`
+	PassWord  string `json:"password" mapstructure:"password"`
+	DebugEnable bool   `json:"debug_enable" mapstructure:"debug_enable"`
+}
+
+func NewProgramConfig() *ProgramConfig {
+	return &ProgramConfig{
+		RssTime:   7200,
+		WebuiPort: 7892,
+		PassWord:  "adminadmin",
+		DebugEnable: false,
+	}
 }
 
 type DownloaderConfig struct {
@@ -45,6 +66,18 @@ type RssParserConfig struct {
 	TmdbAPIKey     string   `json:"tmdb_api_key" mapstructure:"tmdb_api_key"`
 }
 
+// NewRssParserConfig TODO: 加一个对字幕组的选项, 防止 include 污染到全局的排除
+func NewRssParserConfig() *RssParserConfig {
+	return &RssParserConfig{
+		Enable:         true,
+		Filter:         []string{"720", "\\d+-\\d+"},
+		Include:        []string{},
+		Language:       "zh",
+		MikanCustomURL: "mikanani.me",
+		TmdbAPIKey:     "",
+	}
+}
+
 type BangumiRenameConfig struct {
 	Enable       bool   `json:"enable" mapstructure:"enable"`
 	EpsComplete  bool   `json:"eps_complete" mapstructure:"eps_complete"`
@@ -63,9 +96,6 @@ func NewBangumiRenameConfig() *BangumiRenameConfig {
 	}
 }
 
-type LogConfig struct {
-	DebugEnable bool `json:"debug_enable" mapstructure:"debug_enable"`
-}
 
 // ProxyConfig is defined in network.go
 
@@ -74,4 +104,13 @@ type NotificationConfig struct {
 	Type   string `json:"type" mapstructure:"type"`
 	Token  string `json:"token" mapstructure:"token"`
 	ChatID string `json:"chat_id" mapstructure:"chat_id"`
+}
+
+func NewNotificationConfig() *NotificationConfig {
+	return &NotificationConfig{
+		Enable: false,
+		Type:   "telegram",
+		Token:  "",
+		ChatID: "",
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"goto-bangumi/internal/apperrors"
+	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/model"
 
 	"github.com/go-resty/resty/v2"
@@ -40,6 +41,10 @@ func Init(config *model.ProxyConfig) {
 		slog.Info("[Network] Network package initialized", "proxy_enabled", config.Enable)
 		defaultClient = newRequestClient()
 	}
+}
+
+func GetConfig() *model.ProxyConfig {
+	return conf.GetConfigOrDefault("proxy", model.NewProxyConfig())
 }
 
 // GetRequestClient 返回全局共享的 RequestClient 实例

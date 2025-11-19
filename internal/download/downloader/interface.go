@@ -1,7 +1,7 @@
 package downloader
 
 import (
-	"fmt"
+	"log/slog"
 	"strings"
 
 	"goto-bangumi/internal/model"
@@ -60,10 +60,7 @@ type BaseDownloader interface {
 // NewDownloader 创建下载器实例
 // 根据 downloaderType 动态选择具体的下载器实现
 // 支持的类型: "qbittorrent", "qb"
-func NewDownloader(downloaderType string) (BaseDownloader, error) {
-	if downloaderType == "" {
-		return nil, fmt.Errorf("下载器类型不能为空")
-	}
+func NewDownloader(downloaderType string) (BaseDownloader) {
 
 	var d BaseDownloader
 
@@ -71,11 +68,12 @@ func NewDownloader(downloaderType string) (BaseDownloader, error) {
 	switch strings.ToLower(downloaderType) {
 	case "qbittorrent":
 		d = NewQBittorrentDownloader()
-	case "alist":
-		// TODO: Alist 下载器待实现
-		return nil, fmt.Errorf("alist 下载器暂未实现")
+	// case "alist":
+	// 	// TODO: Alist 下载器待实现
+	// 	return nil
 	default:
-		return nil, fmt.Errorf("不支持的下载器类型: %s，支持的类型: qbittorrent, alist", downloaderType)
+		slog.Warn("未知的下载器类型，使用默认的 qBittorrent 下载器", "type", downloaderType)
+		return NewQBittorrentDownloader()
 	}
-	return d, nil
+	return d
 }
