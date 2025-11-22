@@ -9,6 +9,9 @@ const (
 	// EventDownloadCompleted 下载完成事件
 	EventDownloadCompleted = "download.completed"
 
+	// EventDownloadCheck 检查下载是否真实开始
+	EventDownloadCheck = "download.check"
+
 	// EventRenameCompleted 重命名完成事件
 	EventRenameCompleted = "rename.completed"
 

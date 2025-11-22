@@ -1,159 +1,254 @@
-// Package eventbus provides a simple event bus for decoupling communication between modules.
+// Package eventbus provides a high-performance type-safe event bus
+// for Go with generics support.
+//
+// The package implements the Publisher-Subscriber pattern with the following
+// key features:
+//   - Type safety through Go 1.18+ generics
+//   - Non-blocking event delivery
+//   - Thread-safe implementation
+//   - Automatic unsubscription on context cancellation
+//
+// Example usage:
+//
+//	type MyEvent struct {
+//	    Message string
+//	}
+//
+//	bus := events.NewEventBus()
+//	ctx := context.Background()
+//
+//	ch, unsubscribe := events.Subscribe[MyEvent](bus, ctx, 10)
+//	defer unsubscribe()
+//
+//	go func() {
+//	    for event := range ch {
+//	        fmt.Println("Received:", event.Message)
+//	    }
+//	}()
+//
+//	bus.Publish(ctx, MyEvent{Message: "Hello, World!"})
 package eventbus
 
 import (
-	"fmt"
-	"sort"
+	"context"
+	"reflect"
+	"sync"
 )
 
-// handlerWrapper 包装事件处理器，添加优先级和唯一标识
-type handlerWrapper struct {
-	id       int          // 处理器的唯一标识
-	handler  EventHandler // 事件处理函数
-	priority int          // 优先级（数字越小优先级越高）
+// EventBus represents the event bus interface for publishing events.
+// Event subscription is done through the Subscribe[T] function.
+type EventBus interface {
+	// Publish publishes an event to all subscribers of the corresponding type.
+	// Uses non-blocking delivery - if a subscriber's channel is full,
+	// the event will be dropped, preventing publisher blocking.
+	//
+	// Parameters:
+	//   ctx - context for operation cancellation
+	//   ev - event to publish (any type)
+	//
+	// If ev is nil, the publication is ignored.
+	Publish(ctx context.Context, ev any)
+
+	// subscribe - internal method for subscribing to events of a specific type.
+	// Used through the typed Subscribe[T] function.
+	subscribe(ctx context.Context, eventType reflect.Type, buf int) (any, func())
 }
 
-// EventBus 事件总线结构
-type EventBus struct {
-	handlers map[string][]handlerWrapper // 事件类型 -> 处理器列表的映射
-	nextID   int                         // 下一个处理器 ID
+// Subscribe subscribes to events of type T and returns a channel for receiving
+// events and an unsubscribe function.
+//
+// Parameters:
+//
+//	bus - event bus to subscribe to
+//	ctx - context for automatic unsubscription on cancellation
+//	buf - channel buffer size for events
+//
+// Returns:
+//
+//	<-chan T - read-only channel for receiving events of type T
+//	func() - unsubscribe function that closes the channel and removes the subscriber
+//
+// When the context is cancelled, unsubscription is called automatically.
+// The unsubscribe function can be called multiple times safely.
+//
+// Example:
+//
+//	ch, unsubscribe := Subscribe[MyEvent](bus, ctx, 100)
+//	defer unsubscribe()
+//
+//	for event := range ch {
+//	    // handle event
+//	}
+func Subscribe[T any](bus EventBus, ctx context.Context, buf int) (<-chan T, func()) {
+	var zero T
+	eventType := reflect.TypeOf(zero)
+
+	ch, unsubscribe := bus.subscribe(ctx, eventType, buf)
+	return ch.(chan T), unsubscribe
 }
 
-// New 创建一个新的 EventBus 实例
-func New() *EventBus {
-	return &EventBus{
-		handlers: make(map[string][]handlerWrapper),
-		nextID:   1,
+// eventBusImpl represents the concrete implementation of the event bus.
+// Uses a map to store subscribers by event types and a mutex
+// to ensure thread safety.
+type eventBusImpl struct {
+	mu          sync.RWMutex                  // mutex to protect the subscribers map
+	subscribers map[reflect.Type][]subscriber // map of subscribers by event types
+}
+
+// subscriber represents a single subscriber to events of a specific type.
+type subscriber struct {
+	ch     any    // channel for sending events (typed through reflection)
+	cancel func() // unsubscribe function
+}
+
+// NewEventBus creates and returns a new event bus.
+// The returned bus is ready to use and is thread-safe.
+//
+// Example:
+//
+//	bus := NewEventBus()
+//	// bus is ready to use
+func NewEventBus() EventBus {
+	return &eventBusImpl{
+		subscribers: make(map[reflect.Type][]subscriber),
 	}
 }
 
-// Subscribe 订阅事件
-// eventType: 事件类型
-// handler: 事件处理函数
-// priority: 优先级（数字越小优先级越高，建议使用 0-100 范围）
-// 返回: 处理器ID（用于取消订阅）和可能的错误
-func (eb *EventBus) Subscribe(eventType string, handler EventHandler, priority int) (int, error) {
-	if eventType == "" {
-		return 0, fmt.Errorf("event type cannot be empty")
-	}
-	if handler == nil {
-		return 0, fmt.Errorf("handler cannot be nil")
-	}
-
-	// 生成唯一的处理器 ID
-	handlerID := eb.nextID
-	eb.nextID++
-
-	// 创建处理器包装
-	wrapper := handlerWrapper{
-		id:       handlerID,
-		handler:  handler,
-		priority: priority,
+// Publish publishes an event to all subscribers of the corresponding type.
+//
+// The implementation uses the following performance optimizations:
+//   - Copying the subscriber list to minimize lock time
+//   - Non-blocking sending through reflect.Value.TrySend
+//   - Panic handling when sending to closed channels
+//   - Context cancellation check before sending
+//
+// If the event is nil, the method returns without action.
+// If a subscriber's channel is full, the event is dropped without blocking the publisher.
+func (eb *eventBusImpl) Publish(ctx context.Context, ev any) {
+	if ev == nil {
+		return
 	}
 
-	// 添加到处理器列表
-	eb.handlers[eventType] = append(eb.handlers[eventType], wrapper)
+	eventType := reflect.TypeOf(ev)
 
-	// 按优先级排序（优先级小的排在前面）
-	eb.sortHandlers(eventType)
-
-	return handlerID, nil
-}
-
-// Unsubscribe 取消订阅
-// eventType: 事件类型
-// handlerID: 处理器ID（Subscribe 返回的）
-func (eb *EventBus) Unsubscribe(eventType string, handlerID int) error {
-	if eventType == "" {
-		return fmt.Errorf("event type cannot be empty")
-	}
-	if handlerID <= 0 {
-		return fmt.Errorf("handler ID must be positive")
-	}
-
-	handlers, exists := eb.handlers[eventType]
+	eb.mu.RLock()
+	subs, exists := eb.subscribers[eventType]
 	if !exists {
-		return fmt.Errorf("no handlers registered for event type: %s", eventType)
+		eb.mu.RUnlock()
+		return
 	}
 
-	// 查找并移除指定的处理器
-	for i, wrapper := range handlers {
-		if wrapper.id == handlerID {
-			// 从切片中移除该处理器
-			eb.handlers[eventType] = append(handlers[:i], handlers[i+1:]...)
+	// Create a copy of subscribers for safe iteration without prolonged mutex locking.
+	// This is a key pattern for high performance.
+	subscribersCopy := make([]subscriber, len(subs))
+	copy(subscribersCopy, subs)
+	eb.mu.RUnlock()
 
-			// 如果该事件类型没有处理器了，删除该键
-			if len(eb.handlers[eventType]) == 0 {
-				delete(eb.handlers, eventType)
+	// Send event to all subscribers from the copy
+	for _, sub := range subscribersCopy {
+		// Check if context is cancelled before attempting to send
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			// Use anonymous function with recover for safe sending.
+			// This prevents panic if a subscriber unsubscribed and closed
+			// their channel right after we copied the list,
+			// but before we tried to send the event to it.
+			// This is a known and expected race condition in this architecture.
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// Panic when sending to a closed channel ("send on closed channel")
+						// is expected in this race condition. We catch it to
+						// prevent crashing the entire application. Debug-level logging
+						// can be added if needed for debugging.
+					}
+				}()
+
+				// Non-blocking sending through reflection.
+				// If a subscriber's channel is full, the event will be dropped,
+				// preventing the entire system from blocking due to one slow subscriber.
+				chValue := reflect.ValueOf(sub.ch)
+
+				// Additional check: if the channel is closed, TrySend will return false
+				// without panic, but only if the channel is not nil
+				if chValue.IsValid() && !chValue.IsNil() {
+					eventValue := reflect.ValueOf(ev)
+					chValue.TrySend(eventValue)
+				}
+			}()
+		}
+	}
+}
+
+// subscribe subscribes to events of a specific type (internal method).
+//
+// Creates a typed channel through reflection, registers the subscriber,
+// and sets up automatic unsubscription on context cancellation.
+//
+// The unsubscribe function uses sync.Once to prevent multiple
+// calls and ensures proper channel closure and subscriber removal
+// from the list.
+//
+// Parameters:
+//
+//	ctx - context for automatic unsubscription
+//	eventType - event type to subscribe to (obtained through reflection)
+//	buf - channel buffer size
+//
+// Returns:
+//
+//	any - channel interface (cast to type in Subscribe[T])
+//	func() - unsubscribe function
+func (eb *eventBusImpl) subscribe(ctx context.Context, eventType reflect.Type, buf int) (any, func()) {
+	// Create channel for events
+	chType := reflect.ChanOf(reflect.BothDir, eventType)
+	ch := reflect.MakeChan(chType, buf)
+
+	// Create unsubscribe function
+	var once sync.Once
+	unsubscribe := func() {
+		once.Do(func() {
+			eb.mu.Lock()
+			defer eb.mu.Unlock()
+
+			subs, exists := eb.subscribers[eventType]
+			if !exists {
+				ch.Close()
+				return
 			}
 
-			return nil
-		}
+			// Remove subscriber from the list
+			for i, sub := range subs {
+				if reflect.ValueOf(sub.ch).Pointer() == ch.Pointer() {
+					eb.subscribers[eventType] = append(subs[:i], subs[i+1:]...)
+					break
+				}
+			}
+
+			// If no more subscribers, remove type from map
+			if len(eb.subscribers[eventType]) == 0 {
+				delete(eb.subscribers, eventType)
+			}
+
+			ch.Close()
+		})
 	}
 
-	return fmt.Errorf("handler ID not found: %d", handlerID)
-}
-
-// Publish 发布事件（同步调用所有处理器）
-// eventType: 事件类型
-// data: 事件数据
-// 返回: 第一个处理器返回的错误（如果有）
-func (eb *EventBus) Publish(eventType string, data any) error {
-	if eventType == "" {
-		return fmt.Errorf("event type cannot be empty")
-	}
-
-	handlers, exists := eb.handlers[eventType]
-	if !exists || len(handlers) == 0 {
-		// 没有订阅者，静默返回
-		return nil
-	}
-
-	// 按优先级顺序同步调用所有处理器
-	for _, wrapper := range handlers {
-		if err := wrapper.handler(data); err != nil {
-			// 返回第一个错误，但会继续执行后续处理器
-			// 如果需要在错误时停止执行，可以改为 return err
-			return err
-		}
-	}
-
-	return nil
-}
-
-// PublishAsync 异步发布事件（不等待处理器执行完成）
-// 注意：由于项目不需要线程安全，这个方法仅作为演示，实际使用需谨慎
-// eventType: 事件类型
-// data: 事件数据
-func (eb *EventBus) PublishAsync(eventType string, data interface{}) {
-	if eventType == "" {
-		return
-	}
-
-	handlers, exists := eb.handlers[eventType]
-	if !exists || len(handlers) == 0 {
-		return
-	}
-
-	// 异步调用所有处理器
-	go func() {
-		for _, wrapper := range handlers {
-			wrapper.handler(data)
-		}
-	}()
-}
-
-
-// Clear 清空所有订阅
-func (eb *EventBus) Clear() {
-	eb.handlers = make(map[string][]handlerWrapper)
-}
-
-// sortHandlers 按优先级对处理器进行排序
-func (eb *EventBus) sortHandlers(eventType string) {
-	handlers := eb.handlers[eventType]
-	sort.Slice(handlers, func(i, j int) bool {
-		return handlers[i].priority < handlers[j].priority
+	// Add subscriber
+	eb.mu.Lock()
+	eb.subscribers[eventType] = append(eb.subscribers[eventType], subscriber{
+		ch:     ch.Interface(),
+		cancel: unsubscribe,
 	})
-	eb.handlers[eventType] = handlers
+	eb.mu.Unlock()
+
+	// Start goroutine for unsubscription on context cancellation
+	go func() {
+		<-ctx.Done()
+		unsubscribe()
+	}()
+
+	return ch.Interface(), unsubscribe
 }

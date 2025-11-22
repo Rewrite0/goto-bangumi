@@ -138,7 +138,7 @@ func TestTorrentToBangumi(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotBangumi,err := TorrentToBangumi(tt.torrent, tt.rss)
+			gotBangumi,err := TorrentToBangumi(&tt.torrent, tt.rss.URL)
 			if err != nil {
 				t.Errorf("TorrentToBangumi() error = %v, want nil", err)
 				return

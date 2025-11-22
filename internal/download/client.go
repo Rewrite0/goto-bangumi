@@ -27,7 +27,7 @@ type DownloadClient struct {
 	// 登录控制
 	loginDone  chan struct{} // 通知登录完成
 	loginReq   chan struct{} // 是否需要登录
-	loginError chan struct{} // 是否正在登录
+	LoginError chan struct{} // 登录错误通道
 }
 
 // Client 为一个全局的下载客户端实例
@@ -51,7 +51,7 @@ func (c *DownloadClient) Init(config *model.DownloaderConfig)  {
 	}
 	c.Downloader.Init(config)
 	// 初始化登录控制通道
-	c.loginError = make(chan struct{})
+	c.LoginError = make(chan struct{})
 	c.loginReq = make(chan struct{}, 1) // 缓冲区为1，避免重复登录请求
 	c.loginReq <- struct{}{}            // 初始时请求登录
 	c.loginDone = make(chan struct{})
@@ -59,7 +59,7 @@ func (c *DownloadClient) Init(config *model.DownloaderConfig)  {
 }
 
 func (c *DownloadClient) Check(ctx context.Context, hash string) (string, error) {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return "", fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -103,7 +103,7 @@ func (c *DownloadClient) Login(ctx context.Context) {
 					c.RequestLogin()
 				} else if apperrors.IsDownloadAuthenticationError(err) || apperrors.IsDownloadForbiddenError(err) {
 					slog.Error("下载客户端登录失败，认证错误，请检查配置", "error", err)
-					close(c.loginError)
+					close(c.LoginError)
 					// 这时不应该再自动重试了, resetLogin 也不该再触发登陆
 					return
 				}
@@ -124,7 +124,7 @@ func (c *DownloadClient) Login(ctx context.Context) {
 	}
 }
 
-func (c *DownloadClient) ensureLogin(ctx context.Context) error {
+func (c *DownloadClient) EnsureLogin(ctx context.Context) error {
 	// 在logining 的时候, loginDone 会被重新赋值,这时会等待
 	// loginDone 被关闭, 表明没有在登录
 	select {
@@ -132,7 +132,7 @@ func (c *DownloadClient) ensureLogin(ctx context.Context) error {
 		return ctx.Err()
 	case <-c.loginDone:
 		return nil
-	case <-c.loginError:
+	case <-c.LoginError:
 		return &apperrors.DownloadLoginError{Err: fmt.Errorf("下载协程已退出")}
 	// 最多只等待10秒，避免长时间阻塞
 	case <-time.After(10 * time.Second):
@@ -143,7 +143,7 @@ func (c *DownloadClient) ensureLogin(ctx context.Context) error {
 // Add 添加种子
 func (c *DownloadClient) Add(ctx context.Context, url, savePath string) (string, error) {
 	// 1. 确保已登录
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return "", fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -160,24 +160,24 @@ func (c *DownloadClient) Add(ctx context.Context, url, savePath string) (string,
 		networkClient := network.GetRequestClient()
 		respBody, err := networkClient.Get(url)
 		if err != nil {
-			return "", fmt.Errorf("下载种子文件失败: %w", err)
+			return "", fmt.Errorf("[download client] 下载种子文件失败: %w", err)
 		}
 
 		// 解析种子文件
 		torrentInfo, err = ParseTorrent(respBody)
 		if err != nil {
-			return "", fmt.Errorf("解析种子文件失败: %w", err)
+			return "", fmt.Errorf("[download client] 解析种子文件失败: %w", err)
 		}
 	} else {
 		// 解析磁力链接
 		torrentInfo, err = ParseTorrentURL(url)
 		if err != nil {
-			return "", fmt.Errorf("解析磁力链接失败: %w", err)
+			return "", fmt.Errorf("[download client] 解析磁力链接失败: %w", err)
 		}
 	}
 
 	// 3. 调用实际方法
-	hash, err := c.Downloader.Add(torrentInfo, savePath)
+	hashs, err := c.Downloader.Add(torrentInfo, savePath)
 	// 4. 如果是认证错误，重置登录状态
 	if err != nil {
 		if apperrors.IsDownloadAuthenticationError(err) {
@@ -189,13 +189,14 @@ func (c *DownloadClient) Add(ctx context.Context, url, savePath string) (string,
 	// 然后通过一些可能的 check , 来确认到底是哪一个
 	// 5. check hash 拿到 真实的 hash
 	// duid, err := c.Downloader.CheckHash(url)
+	// FIXME: 现在先直接返回第一个
 
-	return hash, err
+	return hashs[0], err
 }
 
 // Delete 删除种子
 func (c *DownloadClient) Delete(ctx context.Context, hashes []string) error {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -213,7 +214,7 @@ func (c *DownloadClient) Delete(ctx context.Context, hashes []string) error {
 
 // Rename 重命名种子文件
 func (c *DownloadClient) Rename(ctx context.Context, hash, oldPath, newPath string) error {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -231,7 +232,7 @@ func (c *DownloadClient) Rename(ctx context.Context, hash, oldPath, newPath stri
 
 // Move 移动种子
 func (c *DownloadClient) Move(ctx context.Context, hashes []string, location string) error {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -249,7 +250,7 @@ func (c *DownloadClient) Move(ctx context.Context, hashes []string, location str
 
 // GetTorrentFiles 获取种子文件列表
 func (c *DownloadClient) GetTorrentFiles(ctx context.Context, hash string) ([]string, error) {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return nil, fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -261,7 +262,7 @@ func (c *DownloadClient) GetTorrentFiles(ctx context.Context, hash string) ([]st
 }
 
 func (c *DownloadClient) GetTorrentInfo(ctx context.Context, hash string) (*model.TorrentDownloadInfo, error) {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return nil, fmt.Errorf("登录失败: %w", err)
 	}
 
@@ -273,7 +274,7 @@ func (c *DownloadClient) GetTorrentInfo(ctx context.Context, hash string) (*mode
 
 // TorrentsInfo 获取种子信息列表
 func (c *DownloadClient) TorrentsInfo(ctx context.Context, statusFilter, category string, tag *string, limit int) ([]map[string]interface{}, error) {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.EnsureLogin(ctx); err != nil {
 		return nil, fmt.Errorf("登录失败: %w", err)
 	}
 

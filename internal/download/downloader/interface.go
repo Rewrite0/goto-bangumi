@@ -45,7 +45,7 @@ type BaseDownloader interface {
 	Move(hashes []string, newLocation string) (bool, error)
 
 	// Add 添加种子
-	Add(torrentInfo *model.TorrentInfo, savePath string) (string, error)
+	Add(torrentInfo *model.TorrentInfo, savePath string) ([]string, error)
 
 	// CheckHash 检查种子是否存在，返回真实的hash
 	CheckHash(hash string) (string, error)

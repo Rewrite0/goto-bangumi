@@ -315,8 +315,7 @@ func (d *QBittorrentDownloader) CheckHash(hash string) (string, error) {
 }
 
 // Add 添加种子
-// TODO: 没必要这么复杂的 hash ,  加个tag 然后再拿一次就好了
-func (d *QBittorrentDownloader) Add(torrentInfo *model.TorrentInfo, savePath string) (string, error) {
+func (d *QBittorrentDownloader) Add(torrentInfo *model.TorrentInfo, savePath string) ([]string, error) {
 	// 准备基础表单数据
 	data := make(map[string]string)
 	data["savepath"] = savePath
@@ -343,21 +342,36 @@ func (d *QBittorrentDownloader) Add(torrentInfo *model.TorrentInfo, savePath str
 	}
 
 	if err != nil {
-		return "", &apperrors.NetworkError{Err: fmt.Errorf("添加种子失败: %w", err), StatusCode: 0}
+		return nil, &apperrors.NetworkError{Err: fmt.Errorf("添加种子失败: %w", err), StatusCode: 0}
 	}
 	if resp.StatusCode() == 403 {
 		slog.Error("[qBittorrent] 需要先登录", "function", "add")
-		return "", &apperrors.NetworkError{Err: fmt.Errorf("需要先登录"), StatusCode: 403}
+		return nil, &apperrors.DownloadAuthenticationError{Err: fmt.Errorf("需要先登录"), Name: d.config.Username}
 	}
 	if resp.StatusCode() == 200 {
 		respText := strings.ToLower(resp.String())
 		if strings.Contains(respText, "fail") {
 			slog.Debug("[qBittorrent] 添加种子失败, 种子重复", "savepath", savePath, "response", respText)
-			return "", fmt.Errorf("添加种子失败: %s", respText)
+			return nil, fmt.Errorf("添加种子失败: %s", respText)
 		}
-		return torrentInfo.InfoHashV1, nil
+
+		// 返回 v1 和 v2 hash 列表
+		hashes := make([]string, 0, 2)
+		if torrentInfo.InfoHashV1 != "" {
+			hashes = append(hashes, torrentInfo.InfoHashV1)
+		}
+		if torrentInfo.InfoHashV2 != "" {
+			// v2 hash 截取前 40 个字符
+			v2Hash := torrentInfo.InfoHashV2
+			if len(v2Hash) > 40 {
+				v2Hash = v2Hash[:40]
+			}
+			hashes = append(hashes, v2Hash)
+		}
+
+		return hashes, nil
 	}
-	return "", fmt.Errorf("添加种子失败：状态码 %d", resp.StatusCode())
+	return nil, fmt.Errorf("添加种子失败：状态码 %d", resp.StatusCode())
 }
 
 // Delete 删除种子
