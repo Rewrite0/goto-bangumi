@@ -23,7 +23,7 @@ type RSSRefreshTask struct {
 func NewRSSRefreshTask() *RSSRefreshTask {
 	// 从配置中读取 RSS 刷新间隔
 	programConfig := conf.GetConfigOrDefault("program", model.NewProgramConfig())
-	interval := max(programConfig.RssTime, 900) // 最小间隔为 15 分钟
+	interval := programConfig.RssTime
 
 	task := &RSSRefreshTask{
 		interval: time.Duration(interval) * time.Second,

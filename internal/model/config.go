@@ -22,15 +22,15 @@ package model
 // }
 
 type ProgramConfig struct {
-	RssTime   int    `json:"rss_time" mapstructure:"rss_time"`
-	WebuiPort int    `json:"webui_port" mapstructure:"webui_port"`
-	PassWord  string `json:"password" mapstructure:"password"`
+	RssTime     int    `json:"rss_time" mapstructure:"rss_time" validate:"gte=300"`
+	WebuiPort   int    `json:"webui_port" mapstructure:"webui_port" validate:"gte=1,lte=65535"`
+	PassWord    string `json:"password" mapstructure:"password"`
 	DebugEnable bool   `json:"debug_enable" mapstructure:"debug_enable"`
 }
 
 func NewProgramConfig() *ProgramConfig {
 	return &ProgramConfig{
-		RssTime:   7200,
+		RssTime:   600,
 		WebuiPort: 7892,
 		PassWord:  "adminadmin",
 		DebugEnable: false,
@@ -38,9 +38,9 @@ func NewProgramConfig() *ProgramConfig {
 }
 
 type DownloaderConfig struct {
-	Type     string `json:"type" mapstructure:"type"`
-	SavePath string `json:"path" mapstructure:"path"`
-	Host     string `json:"host" mapstructure:"host"`
+	Type     string `json:"type" mapstructure:"type" validate:"oneof=qbittorrent transmission aria2"`
+	SavePath string `json:"path" mapstructure:"path" validate:"required"`
+	Host     string `json:"host" mapstructure:"host" validate:"required"`
 	Ssl      bool   `json:"ssl" mapstructure:"ssl"`
 	Username string `json:"username" mapstructure:"username"`
 	Password string `json:"password" mapstructure:"password"`
@@ -61,7 +61,7 @@ type RssParserConfig struct {
 	Enable         bool     `json:"enable" mapstructure:"enable"`
 	Filter         []string `json:"filter" mapstructure:"filter"`
 	Include        []string `json:"include" mapstructure:"include"`
-	Language       string   `json:"language" mapstructure:"language"`
+	Language       string   `json:"language" mapstructure:"language" validate:"oneof=zh en jp"`
 	MikanCustomURL string   `json:"mikan_custom_url" mapstructure:"mikan_custom_url"`
 	TmdbAPIKey     string   `json:"tmdb_api_key" mapstructure:"tmdb_api_key"`
 }
@@ -81,7 +81,7 @@ func NewRssParserConfig() *RssParserConfig {
 type BangumiRenameConfig struct {
 	Enable       bool   `json:"enable" mapstructure:"enable"`
 	EpsComplete  bool   `json:"eps_complete" mapstructure:"eps_complete"`
-	RenameMethod string `json:"rename_method" mapstructure:"rename_method"`
+	RenameMethod string `json:"rename_method" mapstructure:"rename_method" validate:"oneof=advanced normal pn"`
 	Year         bool   `json:"year" mapstructure:"year"`
 	Group        bool   `json:"group" mapstructure:"group"`
 }
@@ -101,7 +101,7 @@ func NewBangumiRenameConfig() *BangumiRenameConfig {
 
 type NotificationConfig struct {
 	Enable bool   `json:"enable" mapstructure:"enable"`
-	Type   string `json:"type" mapstructure:"type"`
+	Type   string `json:"type" mapstructure:"type" validate:"oneof=telegram bark"`
 	Token  string `json:"token" mapstructure:"token"`
 	ChatID string `json:"chat_id" mapstructure:"chat_id"`
 }

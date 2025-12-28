@@ -30,6 +30,7 @@ func InitProgram() {
 	// 开始 event bus
 	err := conf.LoadConfig()
 	if err != nil {
+		slog.Error("[program]加载配置文件失败", "error", err)
 		panic(err)
 	}
 
@@ -38,7 +39,7 @@ func InitProgram() {
 	logger.Init(programConfig.DebugEnable)
 	// 初始化数据库
 	if err := database.InitDB(nil); err != nil {
-		slog.Error("初始化数据库失败", "error", err)
+		slog.Error("[program]初始化数据库失败", "error", err)
 		panic(err)
 	}
 
@@ -62,13 +63,12 @@ func InitProgram() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("配置文件已更新")
+		fmt.Println("[program]配置文件已更新")
 	}
 }
 
 func (p *Program) Start() {
-	// p.ctx = context.Background()
-	p.ctx, p.cancel = context.WithCancel(p.ctx)
+	p.ctx, p.cancel = context.WithCancel(context.Background())
 	download.Client.Login(p.ctx)
 	// 启动调度器
 	InitScheduler(p.ctx)

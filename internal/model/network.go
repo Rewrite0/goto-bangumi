@@ -10,9 +10,9 @@ package model
 // ProxyConfig represents proxy configuration
 type ProxyConfig struct {
 	Enable   bool   `json:"enable" mapstructure:"enable"`
-	Type     string `json:"type" mapstructure:"type"` // http, https (socks5 not supported yet)
+	Type     string `json:"type" mapstructure:"type" validate:"oneof=http https socks5"` // http, https (socks5 not supported yet)
 	Host     string `json:"host" mapstructure:"host"`
-	Port     int    `json:"port" mapstructure:"port"`
+	Port     int    `json:"port" mapstructure:"port" validate:"gte=0,lte=65535"`
 	Username string `json:"username" mapstructure:"username"`
 	Password string `json:"password" mapstructure:"password"`
 }

@@ -6,35 +6,17 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
 )
 
-// GetConfigByKey 泛型函数：根据key从viper获取对应类型的配置
-// 这是插件化系统的核心配置获取方法，支持任意配置类型
-//
-// 使用示例:
-//
-//	// 内置模块使用
-//	cfg, err := conf.GetConfigByKey[model.DownloaderConfig]("downloader")
-//	cfg, err := conf.GetConfigByKey[model.RssParserConfig]("rss_parser")
-//
-//	// 插件使用（插件自定义配置结构体）
-//	type MyPluginConfig struct {
-//	    ApiKey string `json:"api_key"`
-//	    Timeout int   `json:"timeout"`
-//	}
-//	pluginCfg, err := conf.GetConfigByKey[MyPluginConfig]("plugins.my_plugin")
-func GetConfigByKey[T any](key string) (*T, error) {
-	var config T
-	if err := viper.UnmarshalKey(key, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
+// validate 全局验证器实例
+var validate = validator.New()
 
 // GetConfigOrDefault 获取配置，失败时返回默认值
 // 当配置不存在时，将默认值设置到 viper 中
 // 当配置存在但部分字段缺失时，用默认值补全缺失字段
+// 当配置值不符合验证规则时，用默认值替换不合法的字段
 // 最后通过 SaveConfig() 一次性写回配置文件
 func GetConfigOrDefault[T any](key string, defaultValue *T) *T {
 	// 为该 key 的所有字段设置默认值
@@ -48,13 +30,62 @@ func GetConfigOrDefault[T any](key string, defaultValue *T) *T {
 		viper.Set(key, defaultValue)
 		NeedUpdate = true
 		slog.Error("配置解析失败，使用默认值", "key", key, "error", err)
+		SetConfigValue(key, *defaultValue)
 		return defaultValue
 	}
 
-	// 将合并后的配置设置回 viper
-	// viper.Set(key, config)
+	// 验证配置值
+	if err := validate.Struct(config); err != nil {
+		// 验证失败，修正不合法的字段
+		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			fixInvalidFields(key, &config, defaultValue, validationErrors)
+		}
+	}
+
+	// 存储配置值，用于按顺序保存
+	SetConfigValue(key, config)
 
 	return &config
+}
+
+// fixInvalidFields 修正不合法的配置字段，用默认值替换
+func fixInvalidFields[T any](key string, config *T, defaultValue *T, errors validator.ValidationErrors) {
+	configVal := reflect.ValueOf(config).Elem()
+	defaultVal := reflect.ValueOf(defaultValue).Elem()
+	configType := configVal.Type()
+
+	for _, err := range errors {
+		fieldName := err.StructField()
+
+		// 找到对应的字段
+		for i := 0; i < configType.NumField(); i++ {
+			field := configType.Field(i)
+			if field.Name == fieldName {
+				// 获取 json tag 用于日志
+				jsonTag := field.Tag.Get("json")
+				tagParts := strings.Split(jsonTag, ",")
+				jsonName := tagParts[0]
+
+				// 用默认值替换不合法的值
+				invalidValue := configVal.Field(i).Interface()
+				defaultFieldValue := defaultVal.Field(i)
+				configVal.Field(i).Set(defaultFieldValue)
+
+				// 更新 viper 中的值
+				fullKey := key + "." + jsonName
+				viper.Set(fullKey, defaultFieldValue.Interface())
+				NeedUpdate = true
+
+				slog.Warn("配置验证失败，使用默认值",
+					"key", fullKey,
+					"invalid_value", invalidValue,
+					"default_value", defaultFieldValue.Interface(),
+					"rule", err.Tag(),
+				)
+				break
+			}
+		}
+	}
 }
 
 // setDefaultsForKey 为指定 key 的所有字段设置默认值
