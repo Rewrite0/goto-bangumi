@@ -160,4 +160,5 @@ func GenPath(torrentName string, bangumi *model.Bangumi) (*model.EpisodeMetadata
 func InitModule() {
 	c:= conf.GetConfigOrDefault("rename", model.NewBangumiRenameConfig())
 	Init(c)
+	slog.Debug("[rename] 重命名模块初始化完成", "配置", c)
 }

@@ -6,14 +6,18 @@ import (
 
 func TestRawParser(t *testing.T) {
 	tests := []struct {
-		name         string
-		content      string
-		wantGroup    string
-		wantTitleRaw string
-		wantRes      string
-		wantEp       int
-		wantSeason   int
-		wantSub      string
+		name             string
+		content          string
+		wantGroup        string
+		wantTitleRaw     string
+		wantRes          string
+		wantEp           int
+		wantSeason       int
+		wantSub          string
+		wantCollection   bool
+		wantVersion      int
+		wantEpisodeStart int
+		wantEpisodeEnd   int
 	}{
 		{
 			name:         "幻樱字幕组 - 古见同学",
@@ -106,11 +110,11 @@ func TestRawParser(t *testing.T) {
 		},
 		{
 			name:         "ANi - 16bit",
-			content:      "[ANi]  16bit 的感动 ANOTHER LAYER - 01 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
+			content:      "[ANi]  16bit 的感动 ANOTHER LAYER - 02 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
 			wantGroup:    "ANi",
 			wantTitleRaw: "16bit 的感动 ANOTHER LAYER",
 			wantRes:      "1080P",
-			wantEp:       1,
+			wantEp:       2,
 			wantSeason:   1,
 			wantSub:      "繁",
 		},
@@ -140,12 +144,15 @@ func TestRawParser(t *testing.T) {
 			wantSub:      "简繁",
 		},
 		{
-			name:         "桜都字幕组 - 摇曳露营合集",
-			content:      "[桜都字幕组&7³ACG] 摇曳露营 第3季/ゆるキャン△ SEASON3/Yuru Camp S03 | 01-12+New Anime 01-03 [简繁字幕] BDrip 1080p AV1 OPUS 2.0 [复制磁连]",
-			wantGroup:    "桜都字幕组&7³ACG",
-			wantTitleRaw: "ゆるキャン△",
-			wantSub:      "简繁",
-			wantEp:       -1,
+			name:             "桜都字幕组 - 摇曳露营合集",
+			content:          "[桜都字幕组&7³ACG] 摇曳露营 第3季/ゆるキャン△ SEASON3/Yuru Camp S03 | 01-12+New Anime 01-03 [简繁字幕] BDrip 1080p AV1 OPUS 2.0 [复制磁连]",
+			wantGroup:        "桜都字幕组&7³ACG",
+			wantTitleRaw:     "ゆるキャン△",
+			wantSub:          "简繁",
+			wantEp:           -1,
+			wantCollection:   true,
+			wantEpisodeStart: 1,
+			wantEpisodeEnd:   12,
 		},
 		{
 			name:         "ANi - 碧蓝之海2",
@@ -181,6 +188,126 @@ func TestRawParser(t *testing.T) {
 			wantTitleRaw: "NUKITASHI住在拔作岛上的我该如何是好？ -",
 			wantSub:      "简繁",
 		},
+		{
+			name:         "DMG - FAIRY_TAIL",
+			content:      "[DMG][FAIRY_TAIL - 100_YEARS_QUEST][08][1080P][GB].mp4",
+			wantGroup:    "DMG",
+			wantTitleRaw: "FAIRY_TAIL - 100_YEARS_QUEST",
+			wantRes:      "1080P",
+			wantEp:       8,
+			wantSeason:   1,
+			wantSub:      "简",
+		},
+		{
+			name:         "YMDR - 哥布林杀手",
+			content:      "[YMDR][哥布林杀手][Goblin Slayer][2018][02][1080p][AVC][JAP][BIG5][MP4-AAC][繁中] [复制磁连]",
+			wantGroup:    "YMDR",
+			wantTitleRaw: "哥布林杀手",
+			wantRes:      "1080p",
+			wantEp:       2,
+			wantSeason:   1,
+			wantSub:      "繁",
+		},
+		{
+			name:         "安達與島村",
+			content:      "【安達與島村】【第二話】【1080P】【繁體中文】【AVC】",
+			wantTitleRaw: "安達與島村",
+			wantRes:      "1080P",
+			wantEp:       2,
+			wantSeason:   1,
+			wantSub:      "繁",
+		},
+		{
+			name:           "喵萌Production&LoliHouse - U149 v2版本",
+			content:        "[喵萌Production&LoliHouse] 偶像大师 灰姑娘女孩 U149 / THE IDOLM@STER CINDERELLA GIRLS U149 - 04v2 [WebRip 1080p HEVC-10bit AAC][简繁日内封字幕]",
+			wantGroup:      "喵萌Production&LoliHouse",
+			wantTitleRaw:   "偶像大师 灰姑娘女孩 U149",
+			wantRes:        "1080p",
+			wantEp:         4,
+			wantSeason:     1,
+			wantSub:        "简繁日",
+			wantCollection: false,
+			wantVersion:    2,
+		},
+		// ============ 合集测试用例 ============
+		{
+			name:             "安達與島村 - 第01-02話合集",
+			content:          "【安達與島村】【第01-02話】【1080P】【繁體中文】【AVC】",
+			wantTitleRaw:     "安達與島村",
+			wantRes:          "1080P",
+			wantEp:           -1,
+			wantSub:          "繁",
+			wantCollection:   true,
+			wantEpisodeStart: 1,
+			wantEpisodeEnd:   2,
+		},
+		{
+			name:             "从零开始的异世界生活 - 34-35合集",
+			content:          "[从零开始的异世界生活 第二季_Re Zero S2][34-35][繁体][720P][MP4]",
+			wantTitleRaw:     "_Re Zero S2",
+			wantRes:          "720P",
+			wantSeason:       2,
+			wantEp:           -1,
+			wantSub:          "繁",
+			wantCollection:   true,
+			wantEpisodeStart: 34,
+			wantEpisodeEnd:   35,
+		},
+		{
+			name:             "Strike The Blood IV - OVA 05-06合集",
+			content:          "[Strike The Blood IV][OVA][05-06][1080P][GB][MP4]",
+			wantTitleRaw:     "Strike The Blood",
+			wantRes:          "1080P",
+			wantEp:           -1,
+			wantSub:          "简",
+			wantCollection:   true,
+			wantSeason:       4,
+			wantEpisodeStart: 5,
+			wantEpisodeEnd:   6,
+		},
+		{
+			name:           "银河英雄传说 - 全110话",
+			content:        "[Legend of the Galactic Heroes 银河英雄传说][全110话+外传+剧场版][MKV][外挂繁中]",
+			wantTitleRaw:   "银河英雄传说",
+			wantEp:         -1,
+			wantSub:        "繁",
+			wantCollection: true,
+		},
+		{
+			name:             "幻樱字幕组 - 青梅竹马 01~12合集",
+			content:          "【幻樱字幕组】【青梅竹马绝对不会输的恋爱喜剧 Osamake】【01~12】【BIG5_MP4】【1280X720】【合集】",
+			wantGroup:        "幻樱字幕组",
+			wantTitleRaw:     "青梅竹马绝对不会输的恋爱喜剧",
+			wantRes:          "1280X720",
+			wantEp:           -1,
+			wantSub:          "繁",
+			wantCollection:   true,
+			wantEpisodeStart: 1,
+			wantEpisodeEnd:   12,
+		},
+		{
+			name:             "喵萌奶茶屋 - Vivy 01-13END合集",
+			content:          "【喵萌奶茶屋】★04月新番★[Vivy -Fluorite Eye's Song-][01-13END][720p][简体][招募翻译校对]",
+			wantGroup:        "喵萌奶茶屋",
+			wantTitleRaw:     "Vivy -Fluorite Eye's Song-",
+			wantRes:          "720p",
+			wantEp:           -1,
+			wantSub:          "简",
+			wantCollection:   true,
+			wantEpisodeStart: 1,
+			wantEpisodeEnd:   13,
+		},
+		{
+			name:             "DBD-Raws - 龙珠Z 75-107合集",
+			content:          "[DBD-Raws][龙珠Z 30周年纪念版/Dragonball Z 30th Anniversary Collection/ドラゴンボール Z][S3][75-107+特典映像][1080P][BDRip][HEVC-10bit][THD+AC3][MKV]",
+			wantGroup:        "DBD-Raws",
+			wantRes:          "1080P",
+			wantSeason:       3,
+			wantEp:           -1,
+			wantCollection:   true,
+			wantEpisodeStart: 75,
+			wantEpisodeEnd:   107,
+		},
 	}
 
 	for _, tt := range tests {
@@ -208,6 +335,18 @@ func TestRawParser(t *testing.T) {
 			}
 			if tt.wantSub != "" && info.Sub != tt.wantSub {
 				t.Errorf("Sub = %v, want %v", info.Sub, tt.wantSub)
+			}
+			if info.Collection != tt.wantCollection {
+				t.Errorf("Collection = %v, want %v", info.Collection, tt.wantCollection)
+			}
+			if tt.wantVersion != 0 && info.Version != tt.wantVersion {
+				t.Errorf("Version = %v, want %v", info.Version, tt.wantVersion)
+			}
+			if tt.wantEpisodeStart != 0 && info.EpisodeStart != tt.wantEpisodeStart {
+				t.Errorf("EpisodeStart = %v, want %v", info.EpisodeStart, tt.wantEpisodeStart)
+			}
+			if tt.wantEpisodeEnd != 0 && info.EpisodeEnd != tt.wantEpisodeEnd {
+				t.Errorf("EpisodeEnd = %v, want %v", info.EpisodeEnd, tt.wantEpisodeEnd)
 			}
 		})
 	}

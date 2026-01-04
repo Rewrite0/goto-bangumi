@@ -31,7 +31,7 @@ var (
 	configValues = make(map[string]any)
 )
 
-func init() {
+func Init() {
 	// 检测配置文件夹是否存在, 不存在则创建
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -51,10 +51,6 @@ func init() {
 	}
 }
 
-func Init() {
-	// 加载配置文件
-	// 要是有一些项没有的话, 要把文件反写回去
-}
 
 // SetConfigValue 存储配置值，用于 SaveConfig 时按顺序保存
 // 由 GetConfigOrDefault 自动调用

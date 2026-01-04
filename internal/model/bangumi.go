@@ -60,20 +60,25 @@ func NewTmdbItem() *TmdbItem {
 // EpisodeMetadata 用来存储番剧解析器的原始信息
 // 是否要认为一个 EpisodeMetadata 可以对应多个 Bangumi?
 type EpisodeMetadata struct {
-	ID         int    `gorm:"primaryKey;autoIncrement"`
-	Title      string `gorm:"default:'';comment:'番剧名称'"`
-	Season     int    `gorm:"default:1;comment:'季度'"`
-	SeasonRaw  string `gorm:"default:'';comment:'季度原名'"`
-	Episode    int    `gorm:"-;comment:'集数'"`
-	Sub        string `gorm:"default:'';comment:'字幕语言'"`
-	SubType    string `gorm:"default:'';comment:'字幕类型'"`
-	Group      string `gorm:"default:'';comment:'字幕组'"`
-	Year       string `gorm:"-;comment:'年份'"`
-	Resolution string `gorm:"default:'';comment:'分辨率'"`
-	Source     string `gorm:"default:'';comment:'来源'"`
-	AudioInfo  string `gorm:"default:'';comment:'音频信息'"`
-	VideoInfo  string `gorm:"default:'';comment:'视频信息'"`
-	BangumiID  int    `gorm:"index;comment:'关联的Bangumi ID'"`
+	ID           int    `gorm:"primaryKey;autoIncrement"`
+	Title        string `gorm:"default:'';comment:'番剧名称'"`
+	Season       int    `gorm:"default:1;comment:'季度'"`
+	SeasonRaw    string `gorm:"default:'';comment:'季度原名'"`
+	Episode      int    `gorm:"-;comment:'集数'"`
+	Sub          string `gorm:"default:'';comment:'字幕语言'"`
+	SubType      string `gorm:"default:'';comment:'字幕类型'"`
+	Group        string `gorm:"default:'';comment:'字幕组'"`
+	Year         string `gorm:"-;comment:'年份'"`
+	Resolution   string `gorm:"default:'';comment:'分辨率'"`
+	Source       string `gorm:"default:'';comment:'来源'"`
+	AudioInfo    string `gorm:"default:'';comment:'音频信息'"`
+	VideoInfo    string `gorm:"default:'';comment:'视频信息'"`
+	Version      int `gorm:"-;comment:'版本信息'"`
+	BangumiID    int    `gorm:"index;comment:'关联的Bangumi ID'"`
+	Collection   bool   `gorm:"-;comment:'是否为合集'"`
+	EpisodeStart int    `gorm:"-;comment:'集数开始'"`
+	EpisodeEnd   int    `gorm:"-;comment:'集数结束'"`
+	Point5       bool   `gorm:"-;comment:'是否为0.5集'"`
 }
 
 // String 式化输出
@@ -81,6 +86,10 @@ func (e EpisodeMetadata) String() string {
 	return "Title: " + e.Title +
 		", Season: " + strconv.Itoa(e.Season) +
 		", Episode: " + strconv.Itoa(e.Episode) +
+		", Collection: " + strconv.FormatBool(e.Collection) +
+		", Version: " + strconv.Itoa(e.Version) +
+		", EpisodeStart: " + strconv.Itoa(e.EpisodeStart) +
+		", EpisodeEnd: " + strconv.Itoa(e.EpisodeEnd) +
 		", Sub: " + e.Sub +
 		", Group: " + e.Group +
 		", Year: " + e.Year +

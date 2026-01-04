@@ -10,6 +10,7 @@ import (
 	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
+	"goto-bangumi/internal/parser/patterns"
 	"goto-bangumi/internal/utils"
 
 	"golang.org/x/net/html"
@@ -58,6 +59,7 @@ func (p *MikanParser) parseHTML(content []byte, pageURL string) (*model.MikanIte
 
 	// 1. 查找 RSS 链接并提取 Mikan ID
 	rssLink := p.findRSSLink(doc)
+	// 没有这个 link , 说明还没有更新
 	if rssLink == "" {
 		return nil, &apperrors.ParseError{Err: fmt.Errorf("RSS link not found")}
 	}
@@ -74,20 +76,20 @@ func (p *MikanParser) parseHTML(content []byte, pageURL string) (*model.MikanIte
 	}
 	info.OfficialTitle = strings.TrimSpace(officialTitle)
 	// 去除标题中的季度信息
-	season := MikanSeasonPaattern.FindString(info.OfficialTitle)
+	season := patterns.MikanSeasonPattern.FindString(info.OfficialTitle)
 
 	info.Season = 1 // 默认季度为1
 	for _, s := range season {
-		if val, ok := ChineseNumberMap[string(s)]; ok {
+		if val, ok := patterns.ChineseNumberMap[string(s)]; ok {
 			info.Season = val
 			break
 		}
-		if val, ok := ChineseNumberUpperMap[string(s)]; ok {
+		if val, ok := patterns.ChineseNumberUpperMap[string(s)]; ok {
 			info.Season = val
 			break
 		}
 	}
-	info.OfficialTitle = MikanSeasonPaattern.ReplaceAllString(info.OfficialTitle, "")
+	info.OfficialTitle = patterns.MikanSeasonPattern.ReplaceAllString(info.OfficialTitle, "")
 
 	// 3. 提取封面图片链接
 	info.PosterLink, err = p.extractPosterLink(doc, pageURL)

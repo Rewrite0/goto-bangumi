@@ -23,13 +23,7 @@ func getTorrents(url string) []*model.Torrent {
 	return newTorrents
 }
 
-func pullRss(url string) []*model.Torrent {
-	torrents := getTorrents(url)
-	for _, t := range torrents {
-		t.Bangumi.RRSSLink = url
-	}
-	return torrents
-}
+
 
 // FindNewBangumi 从 rss 里面看看没有没新的番剧
 func FindNewBangumi(url string) {
@@ -56,19 +50,19 @@ func FindNewBangumi(url string) {
 	slog.Debug("有新番剧", "数量", len(newTorrents))
 	// 将种子进行解析
 	for _, t := range newTorrents {
-		go createBangumi(t, url)
+		go createBangumi(db, t, url)
 	}
 }
 
 func RefreshRSS(ctx context.Context, url string) {
-	torrents := pullRss(url)
+	torrents := getTorrents(url)
 	db := database.GetDB()
 	for _, t := range torrents {
 		metaData, err := db.GetBangumiParseByTitle(t.Name)
 		if err != nil {
+			continue
 		}
-		t.BangumiID = metaData.BangumiID
-		db.CreateTorrent(t)
-		download.DQueue.Add(ctx, t, t.Bangumi)
+		t.Bangumi = metaData
+		go download.DQueue.Add(ctx, t, t.Bangumi)
 	}
 }

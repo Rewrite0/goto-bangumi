@@ -121,7 +121,7 @@ func setDefaultsForKey[T any](key string, defaultValue *T) {
 		if !viper.IsSet(fullKey) {
 			NeedUpdate = true
 			viper.Set(fullKey, fieldValue.Interface())
-			slog.Debug("配置缺失，设置默认值", "key", fullKey, "value", fieldValue.Interface())
+			slog.Debug("[config] 配置缺失，设置默认值", "key", fullKey, "value", fieldValue.Interface())
 		}
 
 		// 设置默认值

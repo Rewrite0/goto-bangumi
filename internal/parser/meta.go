@@ -1,4 +1,4 @@
-// Package baseparser 包含对标题的基本解析功能, 额外提供 tmdb 和 mikan 的解析功能, TODO:bangumi解析未做
+// Package parser 包含对标题的基本解析功能, 额外提供 tmdb 和 mikan 的解析功能, TODO:bangumi解析未做
 package parser
 
 import (
@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"goto-bangumi/internal/model"
+	"goto-bangumi/internal/parser/patterns"
+	"goto-bangumi/internal/utils"
 
 	"github.com/dlclark/regexp2"
 )
@@ -35,7 +37,13 @@ func NewTitleMetaParse() *TitleMetaParser {
 
 // findallSubTitle 查找并替换标题中的模式
 // 模拟 Python 的 re.findall 行为：返回所有匹配的捕获组
-func (p *TitleMetaParser) findallSubTitle(pattern *regexp2.Regexp, sym string) [][]string {
+// replace 参数控制是否替换匹配的文本，默认为 true
+func (p *TitleMetaParser) findallSubTitle(pattern *regexp2.Regexp, sym string, replace ...bool) [][]string {
+	shouldReplace := true
+	if len(replace) > 0 {
+		shouldReplace = replace[0]
+	}
+
 	ans := make([][]string, 0)
 	positions := make([][2]int, 0) // 记录匹配位置 [rune index]
 
@@ -55,8 +63,8 @@ func (p *TitleMetaParser) findallSubTitle(pattern *regexp2.Regexp, sym string) [
 		match, _ = pattern.FindNextMatch(match)
 	}
 
-	// 如果找到匹配，从后往前替换（避免位置偏移）
-	if len(positions) > 0 {
+	// 如果找到匹配且需要替换，从后往前替换（避免位置偏移）
+	if shouldReplace && len(positions) > 0 {
 		// 将字符串转为 rune 切片以支持 Unicode
 		runes := []rune(p.title)
 		for i := len(positions) - 1; i >= 0; i-- {
@@ -73,7 +81,7 @@ func (p *TitleMetaParser) findallSubTitle(pattern *regexp2.Regexp, sym string) [
 
 // getGroupInfo 获取字幕组信息
 func (p *TitleMetaParser) getGroupInfo() string {
-	groupInfo := p.findallSubTitle(GroupRe, "[]")
+	groupInfo := p.findallSubTitle(patterns.GroupRe, "[]")
 	// 提取第一个捕获组并用& 合并多个字幕组信息
 	groups := make([]string, 0)
 	for _, match := range groupInfo {
@@ -84,24 +92,61 @@ func (p *TitleMetaParser) getGroupInfo() string {
 	return strings.TrimSpace(strings.Join(groups, "&"))
 }
 
-// getCollectionInfo 获取合集信息，返回 true 表示是合集
-func (p *TitleMetaParser) getCollectionInfo() bool {
-	collectionInfo := p.findallSubTitle(CollectionPattern, "/[]")
-	if len(collectionInfo) > 0 {
-		p.episodeTrusted = true
-		return true
+// getCollectionInfo 获取合集信息
+// 返回: isCollection 是否为合集, start 起始集数, end 结束集数
+func (p *TitleMetaParser) getCollectionInfo() (isCollection bool, start int, end int) {
+	// 1. 先尝试有范围的规则（按优先级顺序）
+	for _, pattern := range patterns.CollectionRangePatterns {
+		matches := p.findallSubTitle(pattern, "/[]", false)
+		for _, match := range matches {
+			// 提取前两个非空数字
+			var nums []int
+			for _, m := range match {
+				if m != "" {
+					num, err := strconv.Atoi(m)
+					if err == nil {
+						nums = append(nums, num)
+					}
+					if len(nums) >= 2 {
+						break
+					}
+				}
+			}
+			// 验证范围：start < end
+			if len(nums) >= 2 && nums[0] < nums[1] {
+				// 数值合理，执行替换
+				p.findallSubTitle(pattern, "/[]")
+				p.episodeTrusted = true
+				return true, nums[0], nums[1]
+			}
+		}
 	}
-	return false
+
+	// 2. 尝试无范围的规则（全12话、vol.1 等）
+	for _, pattern := range patterns.CollectionSinglePatterns {
+		matches := p.findallSubTitle(pattern, "/[]", false)
+		if len(matches) > 0 {
+			// 执行替换
+			p.findallSubTitle(pattern, "/[]")
+			p.episodeTrusted = true
+			return true, 0, 0
+		}
+	}
+
+	return false, 0, 0
 }
 
 // episodeInfoToEpisode 从剧集信息元组中提取剧集号
 func (p *TitleMetaParser) episodeInfoToEpisode(episodeInfo []string) int {
-	// 从元组中找到第一个非空字符串（跳过第一个元素，即完整匹配）
-	for i := 0; i < len(episodeInfo); i++ {
-		if episodeInfo[i] != "" {
-			num, err := strconv.Atoi(episodeInfo[i])
+	for _, info := range episodeInfo {
+		if info != "" {
+			num, err := strconv.Atoi(info)
 			if err == nil {
 				return num
+			}
+			// 尝试解析中文数字（1-10）
+			if val, ok := patterns.ChineseNumberMap[info]; ok {
+				return val
 			}
 		}
 	}
@@ -154,13 +199,11 @@ func (p *TitleMetaParser) parseEpisode(episodeInfo [][]string, episodeIsTrusted 
 
 // getTrustedEpisode 获取可信的剧集信息，返回 -1 表示失败
 func (p *TitleMetaParser) getTrustedEpisode() int {
-	episodeInfo := p.findallSubTitle(EpisodePatternTruest, "/[]")
+	episodeInfo := p.findallSubTitle(patterns.EpisodePatternTrust, "/[]")
 	if len(episodeInfo) == 0 {
-		episodeInfo = p.findallSubTitle(EpisodePatternTruestWithBoundary, "/[]")
+		episodeInfo = p.findallSubTitle(patterns.EpisodePatternTrustWithBoundary, "/[]")
 	}
 
-	// for _, ep := range episodeInfo {
-	// }
 	if len(episodeInfo) > 0 {
 		p.episodeTrusted = true
 		return p.parseEpisode(episodeInfo, true)
@@ -170,7 +213,7 @@ func (p *TitleMetaParser) getTrustedEpisode() int {
 
 // getUntrustedEpisode 获取不可信的剧集信息
 func (p *TitleMetaParser) getUntrustedEpisode() int {
-	episodeInfo := p.findallSubTitle(EpisodeReUntrusted, "[]")
+	episodeInfo := p.findallSubTitle(patterns.EpisodeReUntrusted, "[]")
 	if len(episodeInfo) > 0 {
 		return p.parseEpisode(episodeInfo, false)
 	}
@@ -192,12 +235,12 @@ func (p *TitleMetaParser) seasonInfoToSeason(seasonInfo []string) int {
 			}
 
 			// 检查中文数字
-			if val, ok := ChineseNumberMap[season]; ok {
+			if val, ok := patterns.ChineseNumberMap[season]; ok {
 				return val
 			}
 
 			// 检查罗马数字
-			if val, ok := RomanNumbers[season]; ok {
+			if val, ok := patterns.RomanNumbers[season]; ok {
 				return val
 			}
 		}
@@ -221,7 +264,7 @@ func (p *TitleMetaParser) parseSeason(seasonInfo [][]string, seasonIsTrusted boo
 		} else {
 			// 如果是非可信季度信息，返回第一个有效的季度
 			if len(seasonInfo[0]) == 1 && seasonList[0] > 1 && seasonList[0] < 5 {
-				p.findallSubTitle(SeasonPatternUntrusted, "[]")
+				p.findallSubTitle(patterns.SeasonPatternUntrusted, "[]")
 				return seasonList[0], seasonInfo[0][0]
 			}
 		}
@@ -232,9 +275,9 @@ func (p *TitleMetaParser) parseSeason(seasonInfo [][]string, seasonIsTrusted boo
 
 // getTrustedSeason 获取可信的季度信息
 func (p *TitleMetaParser) getTrustedSeason() (int, string) {
-	seasonInfo := p.findallSubTitle(SeasonPatternTruest, "/[]")
+	seasonInfo := p.findallSubTitle(patterns.SeasonPatternTruest, "/[]")
 	if len(seasonInfo) == 0 {
-		seasonInfo = p.findallSubTitle(SeasonPattern, "/[]")
+		seasonInfo = p.findallSubTitle(patterns.SeasonPattern, "/[]")
 	}
 
 	if len(seasonInfo) > 0 {
@@ -253,7 +296,7 @@ func (p *TitleMetaParser) getUntrustedSeason() (int, string) {
 	startPos := 0
 
 	for {
-		match, err := SeasonPatternUntrusted.FindStringMatch(text[startPos:])
+		match, err := patterns.SeasonPatternUntrusted.FindStringMatch(text[startPos:])
 		if err != nil || match == nil {
 			break
 		}
@@ -282,7 +325,7 @@ func (p *TitleMetaParser) getUntrustedSeason() (int, string) {
 
 // getYear 获取年份信息
 func (p *TitleMetaParser) getYear() string {
-	yearInfo := p.findallSubTitle(YearPattern, "[]")
+	yearInfo := p.findallSubTitle(patterns.YearPattern, "[]")
 	if len(yearInfo) > 0 && len(yearInfo[0]) > 0 {
 		// 去除多余的 () 和 []
 		year := strings.ReplaceAll(yearInfo[0][0], "(", "")
@@ -296,6 +339,7 @@ func (p *TitleMetaParser) getYear() string {
 
 // nameProcess 处理标题，提取英文、中文和日文名称
 func (p *TitleMetaParser) nameProcess() (string, string, string) {
+	// TODO: 这里的效果现在并不好, 需要继续优化, 但目前的重点还是在集数解析上
 	// 优化 token 处理逻辑
 	tempTitle := p.title
 	if strings.Contains(tempTitle, "/[]") {
@@ -415,14 +459,6 @@ func (p *TitleMetaParser) nameProcess() (string, string, string) {
 	split = filtered
 
 	if len(split) == 1 {
-		if strings.Contains(animeTitle, "_") {
-			split = strings.Split(animeTitle, "_")
-		} else if strings.Contains(animeTitle, " - ") {
-			split = strings.Split(animeTitle, "-")
-		}
-	}
-
-	if len(split) == 1 {
 		// 主要的思想就是从头或者尾部找出一个中文名
 		cnCount := countChinese(split[0])
 		chineseRatio := 0.0
@@ -479,7 +515,7 @@ func (p *TitleMetaParser) getGroup() string {
 
 // getVideoInfo 获取视频格式信息
 func (p *TitleMetaParser) getVideoInfo() []string {
-	matches := p.findallSubTitle(VideoTypePattern, "[]")
+	matches := p.findallSubTitle(patterns.VideoTypePattern, "[]")
 	result := make([]string, 0)
 	for _, match := range matches {
 		if len(match) > 0 && match[0] != "" {
@@ -491,7 +527,7 @@ func (p *TitleMetaParser) getVideoInfo() []string {
 
 // getResolutionInfo 获取分辨率信息
 func (p *TitleMetaParser) getResolutionInfo() []string {
-	matches := p.findallSubTitle(ResolutionPatternTrust, "[]")
+	matches := p.findallSubTitle(patterns.ResolutionPatternTrust, "[]")
 	result := make([]string, 0)
 	for _, match := range matches {
 		if len(match) > 0 && match[0] != "" {
@@ -503,7 +539,7 @@ func (p *TitleMetaParser) getResolutionInfo() []string {
 
 // getSourceInfo 获取视频来源信息
 func (p *TitleMetaParser) getSourceInfo() []string {
-	matches := p.findallSubTitle(SourceRe, "[]")
+	matches := p.findallSubTitle(patterns.SourceRe, "[]")
 	result := make([]string, 0)
 	for _, match := range matches {
 		if len(match) > 0 && match[0] != "" {
@@ -515,7 +551,7 @@ func (p *TitleMetaParser) getSourceInfo() []string {
 
 // getUnusefulInfo 获取无用信息
 func (p *TitleMetaParser) getUnusefulInfo() []string {
-	matches := p.findallSubTitle(UnusefulRe, "[]")
+	matches := p.findallSubTitle(patterns.UnusefulRe, "[]")
 	result := make([]string, 0)
 	for _, match := range matches {
 		if len(match) > 0 && match[0] != "" {
@@ -527,7 +563,7 @@ func (p *TitleMetaParser) getUnusefulInfo() []string {
 
 // getSubtitleType 获取字幕类型
 func (p *TitleMetaParser) getSubtitleType() string {
-	matches := p.findallSubTitle(SubReType, "[]")
+	matches := p.findallSubTitle(patterns.SubReType, "[]")
 	s := ""
 	for _, match := range matches {
 		if len(match) > 0 && match[0] != "" {
@@ -544,19 +580,19 @@ func (p *TitleMetaParser) getSubtitleType() string {
 func (p *TitleMetaParser) getSubtitleLanguage() string {
 	sub := ""
 
-	if len(p.findallSubTitle(SubReChs, "[]")) > 0 {
+	if len(p.findallSubTitle(patterns.SubReChs, "[]")) > 0 {
 		sub += "简"
 	}
 
-	if len(p.findallSubTitle(SubReCht, "[]")) > 0 {
+	if len(p.findallSubTitle(patterns.SubReCht, "[]")) > 0 {
 		sub += "繁"
 	}
 
-	if len(p.findallSubTitle(SubReJp, "[]")) > 0 {
+	if len(p.findallSubTitle(patterns.SubReJp, "[]")) > 0 {
 		sub += "日"
 	}
 
-	if len(p.findallSubTitle(SubReEnglish, "[]")) > 0 {
+	if len(p.findallSubTitle(patterns.SubReEnglish, "[]")) > 0 {
 		sub += "英"
 	}
 
@@ -565,7 +601,7 @@ func (p *TitleMetaParser) getSubtitleLanguage() string {
 
 // getAudioInfo 获取音频信息
 func (p *TitleMetaParser) getAudioInfo() string {
-	matches := p.findallSubTitle(AudioInfo, "[]")
+	matches := p.findallSubTitle(patterns.AudioInfo, "[]")
 	if len(matches) > 0 && len(matches[0]) > 0 {
 		return matches[0][0]
 	}
@@ -595,44 +631,57 @@ func (p *TitleMetaParser) Parse(title string) *model.EpisodeMetadata {
 	return meta
 }
 
+func (p *TitleMetaParser) getVersion() int {
+	versionInfo := p.findallSubTitle(patterns.VersionPattern, "[]")
+	if len(versionInfo) == 0 {
+		versionInfo = p.findallSubTitle(patterns.VersionWithNum, "[]")
+	}
+	if len(versionInfo) > 0 {
+		return p.episodeInfoToEpisode(versionInfo[0])
+	}
+	return 1
+}
+
 // ParseEpisode 解析视频的集数
 func (p *TitleMetaParser) ParseEpisode(title string) *model.EpisodeMetadata {
+	ep := &model.EpisodeMetadata{}
 	p.rawTitle = title
 	p.title = title
-	// TODO: 这个函数可和 request_url.go 里的 processTitle 合并
-	p.title = processTitle(p.title)
+	p.title = utils.ProcessTitle(p.title)
 
 	// 末尾加一个 / 处理边界
 	p.title += "/"
-
+	// 开头加一个[ 处理边界
+	p.title = "[" + p.title
 	// 从一个自己定义的字幕组文件中获取字幕组信息, 保证字幕组信息的准确性
-	group := p.getGroupInfo()
-	year := p.getYear()
+	// TODO: 这个后面要放成一个可更新的文件, 现在先这样写着
+	ep.Group = p.getGroupInfo()
+	ep.Year = p.getYear()
 	sourceInfo := p.getSourceInfo()
 	resolutionInfo := p.getResolutionInfo()
-	audioInfo := p.getAudioInfo()
+	ep.AudioInfo = p.getAudioInfo()
 	videoInfo := p.getVideoInfo()
 
 	// 要先拿字幕类型, 双语什么的会影响字幕语言的判断
-	subType := p.getSubtitleType()
-	subLanguage := p.getSubtitleLanguage()
+	ep.SubType = p.getSubtitleType()
+	ep.Sub = p.getSubtitleLanguage()
+	// 无用信息后面也要做成一个可更新的文件, 着实情况太多了
 	_ = p.getUnusefulInfo() // 清理无用信息，但不使用结果
 
 	// 先排除 range 的集数, 再排除可信的集数, 最后才是非可信的集数
 	// 用episode = -1 来表示全集
-	var episode int
-	isCollection := p.getCollectionInfo()
+	ep.Collection, ep.EpisodeStart, ep.EpisodeEnd = p.getCollectionInfo()
+	ep.Version = p.getVersion()
 
 	// 处理可信的集数和季度, collection 的季度和集数解析没有意义
-	if isCollection {
-		// 是合集，episode = -1
-		episode = -1
+	if ep.Collection { // 是合集，episode = -1
+		ep.Episode = -1
 	} else {
 		// 不是合集，尝试获取可信集数
-		episode = p.getTrustedEpisode()
-		if episode == -1 {
+		ep.Episode = p.getTrustedEpisode()
+		if ep.Episode == -1 {
 			// 没有可信集数，获取不可信集数
-			episode = p.getUntrustedEpisode()
+			ep.Episode = p.getUntrustedEpisode()
 		}
 	}
 
@@ -642,47 +691,33 @@ func (p *TitleMetaParser) ParseEpisode(title string) *model.EpisodeMetadata {
 	if !p.seasonTrusted {
 		season, seasonRaw = p.getUntrustedSeason()
 	}
+	ep.Season = season
+	ep.SeasonRaw = seasonRaw
 
-	source := ""
 	if len(sourceInfo) > 0 {
-		source = sourceInfo[0]
+		ep.Source = sourceInfo[0]
 	}
 
-	resolution := ""
 	if len(resolutionInfo) > 0 {
-		resolution = resolutionInfo[0]
+		ep.Resolution = resolutionInfo[0]
 	}
 
-	videoInfoStr := ""
 	if len(videoInfo) > 0 {
-		videoInfoStr = strings.Join(videoInfo, ",")
+		ep.VideoInfo = strings.Join(videoInfo, ",")
 	}
 
-	return &model.EpisodeMetadata{
-		Season:     season,
-		SeasonRaw:  seasonRaw,
-		Episode:    episode,
-		Sub:        subLanguage,
-		SubType:    subType,
-		Group:      group,
-		Year:       year,
-		Resolution: resolution,
-		Source:     source,
-		AudioInfo:  audioInfo,
-		VideoInfo:  videoInfoStr,
-	}
+	return ep
 }
-
 
 // IsV1 判断是否是 v1 番剧
 func IsV1(title string) bool {
-	match, _ := V1Re.FindStringMatch(title)
+	match, _ := patterns.VersionPattern.FindStringMatch(title)
 	return match != nil
 }
 
 // IsPoint5 判断是否是 .5 番剧
 func IsPoint5(title string) bool {
-	match, _ := Point5Re.FindStringMatch(title)
+	match, _ := patterns.Point5Re.FindStringMatch(title)
 	return match != nil
 }
 
@@ -792,16 +827,4 @@ func firstNonEmptyString(strs ...string) string {
 		}
 	}
 	return ""
-}
-
-func processTitle(title string) string {
-	// title 里面可能有"\n"
-	title = strings.ReplaceAll(title, "\n", "")
-	// 如果以【开头
-	if strings.HasPrefix(title, "【") {
-		title = strings.ReplaceAll(title, "【", "[")
-		title = strings.ReplaceAll(title, "】", "]")
-	}
-	title = strings.TrimSpace(title)
-	return title
 }

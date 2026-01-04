@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
 )
 
@@ -26,19 +27,6 @@ var DQueue *DownloadQueue = &DownloadQueue{
 }
 
 func (dq *DownloadQueue) Add(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi) {
-	select {
-	case <-Client.LoginError:
-		slog.Warn("下载客户端登陆任务退出，无法添加种子", "Name", torrent.Name)
-		return
-	default:
-	}
-	// 看看是不是在登陆, 登陆中的话就等登陆完成
-	err := Client.EnsureLogin(ctx)
-	if err != nil {
-		slog.Warn("[DownloadQueue] 下载客户端登陆失败，无法添加种子", "Name", torrent.Name, "error", err)
-		return
-	}
-	// 检查该 torrent URL 是否已在队列中排队
 	if _, exists := dq.InQueue.Load(torrent.URL); exists {
 		slog.Debug("种子已在下载队列中，跳过添加", "Name", torrent.Name, "URL", torrent.URL)
 		return
@@ -54,6 +42,8 @@ func (dq *DownloadQueue) Add(ctx context.Context, torrent *model.Torrent, bangum
 	case dq.Queue <- tb:
 		// 成功加入队列后，标记该 URL 正在队列中
 		dq.InQueue.Store(torrent.URL, true)
+		db := database.GetDB()
+		_ = db.CreateTorrent(torrent)
 		slog.Debug("种子已加入下载队列", "Name", torrent.Name, "URL", torrent.URL)
 	}
 }
@@ -63,6 +53,7 @@ func (dq *DownloadQueue) Clear() {
 	for {
 		select {
 		case tb := <-dq.Queue:
+
 			// 清理队列时也要移除对应的标记
 			dq.InQueue.Delete(tb.Torrent.URL)
 		default:

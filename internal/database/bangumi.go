@@ -13,6 +13,7 @@ import (
 
 // 用于防止并发创建相同 Bangumi 的互斥锁
 var bangumiCreateMutex sync.Mutex
+
 // CreateBangumi 创建番剧
 func (db *DB) CreateBangumi(bangumi *model.Bangumi) error {
 	// 加锁防止并发创建重复的 Bangumi
@@ -40,13 +41,13 @@ func (db *DB) CreateBangumi(bangumi *model.Bangumi) error {
 		Preload("TmdbItem").
 		Preload("EpisodeMetadata").
 		Where("mikan_id = ?", mikanID).
-		Or("tmdb_id", tmdbID).First(&oldBangumi).Error
+		Or("tmdb_id = ?", tmdbID).First(&oldBangumi).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
 	if oldBangumi.ID != 0 {
 		// 找到的话就更新一下 mikan, tmdb
-		slog.Debug("番剧已存在，进行更新", slog.String("标题", oldBangumi.OfficialTitle))
+		slog.Debug("[database] 番剧已存在，进行更新", "标题", oldBangumi.OfficialTitle)
 		if oldBangumi.MikanID == nil && bangumi.MikanItem != nil {
 			oldBangumi.MikanItem = bangumi.MikanItem
 		}

@@ -12,6 +12,56 @@ var tmdbSearchWolf []byte
 //go:embed testdata/tmdb_info_229676.json
 var tmdbInfo229676 []byte
 
+//go:embed testdata/tmdb_search_hyakusho.json
+var tmdbSearchHyakusho []byte
+
+//go:embed testdata/tmdb_search_hyakusho_star.json
+var tmdbSearchHyakushoStar []byte
+
+func TestTMDBSearch(t *testing.T) {
+	tests := []struct {
+		name          string
+		keyword       string
+		wantCount     int
+		wantFirstID   int
+		wantFirstName string
+	}{
+		{
+			name:          "百姓贵族 - 正常搜索",
+			keyword:       "百姓贵族",
+			wantCount:     1,
+			wantFirstID:   221165,
+			wantFirstName: "Hyakusho Kizoku-the farmer's days",
+		},
+		{
+			name:      "★百姓贵族 - 带特殊字符返回空结果",
+			keyword:   "★百姓贵族",
+			wantCount: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := NewTMDBParse()
+			results, err := parser.TMDBSearch(tt.keyword)
+			if err != nil {
+				t.Fatalf("TMDBSearch() error = %v", err)
+			}
+			if len(results) != tt.wantCount {
+				t.Errorf("TMDBSearch() results count = %d, want %d", len(results), tt.wantCount)
+			}
+			if tt.wantCount > 0 {
+				if results[0].ID != tt.wantFirstID {
+					t.Errorf("TMDBSearch() first result ID = %d, want %d", results[0].ID, tt.wantFirstID)
+				}
+				if results[0].Name != tt.wantFirstName {
+					t.Errorf("TMDBSearch() first result Name = %s, want %s", results[0].Name, tt.wantFirstName)
+				}
+			}
+			t.Logf("TMDBSearch(%s) returned %d results", tt.keyword, len(results))
+		})
+	}
+}
+
 func TestTmdbParse(t *testing.T){
 	tests := []struct {
 		name              string

@@ -23,17 +23,20 @@ type DB struct {
 var globalDB *DB
 
 // NewDB 创建数据库连接
+// dsn 为 nil 时使用默认路径，传入 ":memory:" 可创建内存数据库
 func NewDB(dsn *string) (*DB, error) {
 	// 打开数据库连接，使用简单配置
-	path  := filepath.Join("./data/data.db")
+	path := filepath.Join("./data/data.db")
 	if dsn != nil {
 		path = *dsn
 	}
 
-	// 确保数据库目录存在
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
+	// 内存数据库不需要创建目录
+	if path != ":memory:" {
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("创建数据库目录失败: %w", err)
+		}
 	}
 
 	gormDB, err := gorm.Open(sqlite.Open(path), &gorm.Config{
@@ -110,7 +113,6 @@ func CloseDB() error {
 	}
 	return nil
 }
-
 
 // ============ RSS 相关方法 ============
 
@@ -251,7 +253,7 @@ func (db *DB) CheckNewTorrents(torrents []*model.Torrent) ([]*model.Torrent, err
 		}
 
 		// 不存在或未下载的种子
-		if existing == nil || existing.Downloaded ==0 {
+		if existing == nil || existing.Downloaded == 0 {
 			newTorrents = append(newTorrents, torrent)
 		}
 	}
@@ -352,15 +354,21 @@ func (db *DB) CreateBangumiParse(parser *model.EpisodeMetadata) error {
 	return db.Save(parser).Error
 }
 
-func (db *DB) GetBangumiParseByTitle(torrentName string) (*model.EpisodeMetadata, error) {
+func (db *DB) GetBangumiParseByTitle(torrentName string) (*model.Bangumi, error) {
 	// 要求 Title 和 Group 都在 torrentName 中出现
 	// title 和 group 是 torrentName 的子串
 	var metaData model.EpisodeMetadata
-	err := db.Preload("Bangumis").Where("instr(?, title) > 0 AND instr(?, `group`) > 0", torrentName, torrentName).First(&metaData).Error
+	err := db.Where("instr(?, title) > 0 AND instr(?, `group`) > 0", torrentName, torrentName).First(&metaData).Error
 	if err != nil {
 		return nil, err
 	}
-	return &metaData, nil
+	// 通过 id 获取 对应的bangumi
+	var bangumi model.Bangumi
+	err = db.First(&bangumi, metaData.BangumiID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &bangumi, nil
 }
 
 // GetBangumiParseByID 根据 ID 获取番剧解析器

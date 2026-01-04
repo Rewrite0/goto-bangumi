@@ -30,7 +30,7 @@ func NewRSSRefreshTask() *RSSRefreshTask {
 		enabled:  true, // 默认启用
 	}
 
-	slog.Debug("创建 RSS 刷新任务", "间隔", task.interval)
+	slog.Debug("[task rss]创建 RSS 刷新任务", "间隔", task.interval)
 	return task
 }
 
@@ -66,7 +66,7 @@ func (t *RSSRefreshTask) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			slog.Debug("刷新 RSS 源", "名称", rss.Name, "URL", rss.URL)
+			slog.Debug("[refresh] 刷新 RSS 源", "名称", rss.Name, "URL", rss.URL)
 
 			// 调用 refresh 模块的刷新方法
 			refresh.RefreshRSS(ctx, rss.URL)

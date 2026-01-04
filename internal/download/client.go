@@ -85,6 +85,7 @@ func (c *DownloadClient) RequestLogin() {
 // 从 loginReq 通道接收登录请求，处理登录逻辑
 // 如果是网络错误，自动重试；如果是认证错误，等待外部重新请求
 func (c *DownloadClient) Login(ctx context.Context) {
+	slog.Debug("[download]下载客户端登录协程启动")
 	for {
 		select {
 		case <-ctx.Done():
@@ -304,4 +305,5 @@ func (c *DownloadClient) GetConfig() *model.DownloaderConfig {
 func InitModule() {
 	c := conf.GetConfigOrDefault("downloader", model.NewDownloaderConfig())
 	Client.Init(c)
+	slog.Debug("[download] 下载客户端初始化完成", "类型", c.Type, "保存路径", c.SavePath)
 }

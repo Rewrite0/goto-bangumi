@@ -1,8 +1,10 @@
 package refresh
 
 import (
+	// "os"
 	"testing"
 
+	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
 )
 
@@ -183,5 +185,58 @@ func TestTorrentToBangumi(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCreateBangumi(t *testing.T) {
+	// 创建内存数据库，测试完成后自动释放
+	memoryDB := ":memory:"
+	db, err := database.NewDB(&memoryDB)
+	if err != nil {
+		t.Fatalf("创建测试数据库失败: %v", err)
+	}
+	defer db.Close()
+
+	torrent := &model.Torrent{
+		Name:     "[ANi] Chitose Is in the Ramune Bottle / 弹珠汽水瓶里的千岁同学 - 02 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
+		URL:      "magnet:?xt=urn:btih:EXAMPLE1",
+		Homepage: "https://mikanani.me/Home/Episode/7c8c41e409922d9f2c34a726c92e77daf05558ff",
+	}
+	rssLink := "https://mikanani.me/RSS/Search?searchstr=ANI"
+
+	// 调用被测函数
+	createBangumi(db, torrent, rssLink)
+
+	// 验证数据库中是否创建了番剧
+	bangumi, err := db.GetBangumiByOfficialTitle("弹珠汽水瓶里的千岁同学")
+	if err != nil {
+		t.Fatalf("查询番剧失败: %v", err)
+	}
+	if bangumi == nil {
+		t.Fatal("未找到期望的番剧: 弹珠汽水瓶里的千岁同学")
+	}
+
+	// 验证基础信息
+	if bangumi.OfficialTitle != "弹珠汽水瓶里的千岁同学" {
+		t.Errorf("OfficialTitle = %v, want 弹珠汽水瓶里的千岁同学", bangumi.OfficialTitle)
+	}
+	if bangumi.Year != "2025" {
+		t.Errorf("Year = %v, want 2025", bangumi.Year)
+	}
+	if bangumi.Season != 1 {
+		t.Errorf("Season = %v, want 1", bangumi.Season)
+	}
+	if bangumi.RRSSLink != rssLink {
+		t.Errorf("RRSSLink = %v, want %v", bangumi.RRSSLink, rssLink)
+	}
+
+	// 验证 MikanItem
+	if bangumi.MikanID == nil || *bangumi.MikanID != 3774 {
+		t.Errorf("MikanID = %v, want 3774", bangumi.MikanID)
+	}
+
+	// 验证 TmdbItem
+	if bangumi.TmdbID == nil || *bangumi.TmdbID != 261343 {
+		t.Errorf("TmdbID = %v, want 261343", bangumi.TmdbID)
 	}
 }

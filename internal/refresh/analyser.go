@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"goto-bangumi/internal/apperrors"
@@ -18,13 +19,14 @@ func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
 		mikanParse := parser.NewMikanParser()
 		mikanInfo, err := mikanParse.Parse(torrent.Homepage)
 		// 这里要看看是网络问题还是解析问题, 不过感觉有 homepage ，那就一定是网络问题
+		// 不过也可能是 mikan 还没有收录
 		if err == nil {
 			bangumi.OfficialTitle = mikanInfo.OfficialTitle
 			bangumi.PosterLink = mikanInfo.PosterLink
 			bangumi.MikanItem = mikanInfo
 			bangumi.Season = mikanInfo.Season
 		} else {
-			slog.Debug("mikan 解析失败", slog.String("种子名称", torrent.Name), slog.String("错误信息", err.Error()))
+			slog.Debug("[OfficialTitleParse] mikan 解析失败", "种子名称", torrent.Name, "error", err)
 			// 网络错误直接返回,不做后面的解析
 			if apperrors.IsNetworkError(err) {
 				return nil, err
@@ -77,20 +79,29 @@ func FilterTorrent(torrent *model.Torrent, bangumi *model.Bangumi) bool {
 		exclude = bangumi.ExcludeFilter
 		include = bangumi.IncludeFilter
 	}
-	for v := range strings.SplitSeq(exclude, ",") {
-		if v != "" && strings.Contains(torrent.Name, v) {
-			slog.Debug("过滤种子", slog.String("种子名称", torrent.Name), slog.String("过滤关键词", v))
+	// 排除过滤：将逗号分隔的规则用 | 连接成正则表达式
+	if exclude != "" {
+		excludePattern := strings.ReplaceAll(exclude, ",", "|")
+		re, err := regexp.Compile(excludePattern)
+		if err != nil {
+			slog.Warn("[FilterTorrent] 排除过滤正则表达式编译失败", "正则", excludePattern, "error", err)
+		} else if re.MatchString(torrent.Name) {
+			slog.Debug("[FilterTorrent] 过滤种子", "种子名称", torrent.Name, "匹配正则", excludePattern)
 			return false
 		}
 	}
-	// 包含过滤
-	for v := range strings.SplitSeq(include, ",") {
-		if v != "" && strings.Contains(torrent.Name, v) {
-			slog.Debug("通过包含过滤", slog.String("种子名称", torrent.Name), slog.String("包含关键词", v))
+	// 包含过滤：将逗号分隔的规则用 | 连接成正则表达式
+	if include != "" {
+		includePattern := strings.ReplaceAll(include, ",", "|")
+		re, err := regexp.Compile(includePattern)
+		if err != nil {
+			slog.Warn("[FilterTorrent] 包含过滤正则表达式编译失败", "正则", includePattern, "error", err)
+		} else if re.MatchString(torrent.Name) {
+			slog.Debug("[FilterTorrent] 通过包含过滤", "种子名称", torrent.Name, "匹配正则", includePattern)
 			return true
 		}
 	}
-	slog.Debug("通过", slog.String("种子名称", torrent.Name))
+	slog.Debug("[FilterTorrent] 通过", "种子名称", torrent.Name)
 	return true
 }
 
@@ -102,7 +113,7 @@ func TorrentToBangumi(torrent *model.Torrent, rssLink string) (*model.Bangumi, e
 	// 1. torrent 的名字不太对, 当torrent 名字不对而没法解析的时候, 要显示bangumi
 	// 2. 网络的问题 , 这会导致永远无法出来这个番剧,这是不对的
 	// TODO: 后面会有一些合并， 现在先放着
-	bangumi, err = OfficialTitleParse(torrent)
+	// bangumi, err = OfficialTitleParse(torrent)
 	// 对于网络错误, 不添加
 	if err != nil && bangumi == nil {
 		if apperrors.IsNetworkError(err) {
@@ -125,23 +136,24 @@ func TorrentToBangumi(torrent *model.Torrent, rssLink string) (*model.Bangumi, e
 	return bangumi, nil
 }
 
-func createBangumi(torrent *model.Torrent, rssLink string) {
+func createBangumi(db *database.DB, torrent *model.Torrent, rssLink string) {
 	bangumi, err := TorrentToBangumi(torrent, rssLink)
 	if err != nil && apperrors.IsNetworkError(err) {
-		slog.Warn("网络错误，跳过该番剧的添加", slog.String("种子名称", torrent.Name), slog.String("错误信息", err.Error()))
+		slog.Warn("[createBangumi] 网络错误，跳过该番剧的添加", "种子名称", torrent.Name, "error", err)
 		return
 	}
 	// 对 mikan 部份错误进行处理
 
-	slog.Debug("createBangumi", bangumi)
 	if bangumi != nil {
-		if torrent.Homepage != "" && bangumi.MikanItem == nil {
-			// 这里对应 mikan 未添加的情况, 一般出现在季度初
-			// TODO: 没想好怎么处理, 先放着
-		}
+		slog.Debug("createBangumi", "名称", bangumi.OfficialTitle)
+		// if torrent.Homepage != "" && bangumi.MikanItem == nil {
+		// 	// 这里对应 mikan 未添加的情况, 一般出现在季度初
+		// 	// TODO: 没想好怎么处理, 先放着
+		// }
 		// 对 bangumi 进行处理，要看看有没有相同的 bangumi 项
 		// 有相同的就只更新metadata
-		db := database.GetDB()
-		db.CreateBangumi(bangumi)
+		if err := db.CreateBangumi(bangumi); err != nil {
+			slog.Error("[createBangumi] 创建番剧失败", "种子名称", torrent.Name, "error", err)
+		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"goto-bangumi/internal/parser"
 	"goto-bangumi/internal/rename"
 	"goto-bangumi/internal/scheduler"
+	"goto-bangumi/internal/task"
 )
 
 // 先实现一下整体的初使化
@@ -25,10 +26,12 @@ type Program struct {
 	cancel context.CancelFunc
 }
 
-func InitProgram() {
+func InitProgram(ctx context.Context) {
 	// database
 	// 开始 event bus
+	conf.Init()
 	err := conf.LoadConfig()
+	// LoadConfig()
 	if err != nil {
 		slog.Error("[program]加载配置文件失败", "error", err)
 		panic(err)
@@ -67,11 +70,12 @@ func InitProgram() {
 	}
 }
 
-func (p *Program) Start() {
-	p.ctx, p.cancel = context.WithCancel(context.Background())
-	download.Client.Login(p.ctx)
+func (p *Program) Start(ctx context.Context) {
+	p.ctx, p.cancel = context.WithCancel(ctx)
+	go download.Client.Login(p.ctx)
 	// 启动调度器
 	InitScheduler(p.ctx)
+	// 注册事件监听器
 }
 
 func (p *Program) Stop() {
@@ -92,7 +96,8 @@ func InitScheduler(ctx context.Context) {
 	}
 
 	// 添加 RSS 刷新任务
-	// s.AddTask(scheduler.NewRSSRefreshTask())
+	s.AddTask(task.NewRSSRefreshTask())
+	s.AddTask(task.NewDownloadTask())
 
 	// 启动调度器
 	s.Start()

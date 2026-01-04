@@ -107,16 +107,6 @@ func (h *CustomHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-func init() {
-	// 检测配置文件夹是否存在, 不存在则创建
-	if _, err := os.Stat(logDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(logDir, 0o755); err != nil {
-			slog.Error("创建配置文件夹失败", "error", err)
-			return
-		}
-		slog.Info("配置文件夹创建成功", "path", logDir)
-	}
-}
 
 // Init 初始化日志系统
 // debugEnable: 是否开启调试模式，true 为 Debug 级别，false 为 Info 级别
