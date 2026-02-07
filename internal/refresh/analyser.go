@@ -1,6 +1,7 @@
 package refresh
 
 import (
+	"context"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -11,13 +12,13 @@ import (
 	"goto-bangumi/internal/parser"
 )
 
-func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
+func OfficialTitleParse(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
 	bangumi := model.NewBangumi()
 	if torrent.Homepage != "" {
 		// 对于有 homepage 的, 默认进行一遍解析, 用以得到更准确的标题
 		// 就算是 mikan 的, 也不一定有 homepage
 		mikanParse := parser.NewMikanParser()
-		mikanInfo, err := mikanParse.Parse(torrent.Homepage)
+		mikanInfo, err := mikanParse.Parse(ctx, torrent.Homepage)
 		// 这里要看看是网络问题还是解析问题, 不过感觉有 homepage ，那就一定是网络问题
 		// 不过也可能是 mikan 还没有收录
 		if err == nil {
@@ -46,7 +47,7 @@ func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
 			title = parser.NewTitleMetaParse().Parse(torrent.Name).Title
 		}
 
-		tmdbInfo, err := tmdbParse.TMDBParse(title, "zh")
+		tmdbInfo, err := tmdbParse.TMDBParse(ctx, title, "zh")
 		// 当 tmdb 也没有找到信息的时候，如果 mikan 也没有找到， 报错
 		if err != nil {
 			if bangumi.OfficialTitle == "" {
@@ -68,17 +69,11 @@ func OfficialTitleParse(torrent *model.Torrent) (*model.Bangumi, error) {
 }
 
 // FilterTorrent 通过bangumi信息判断torrent是否符合要求
-func FilterTorrent(torrent *model.Torrent, bangumi *model.Bangumi) bool {
+func FilterTorrent(torrent *model.Torrent,include string,exclude string) bool {
 	// 排除过滤
-	var exclude, include string
-	if bangumi == nil {
-		exclude = strings.Join(parser.ParserConfig.Filter, ",")
-		include = strings.Join(parser.ParserConfig.Include, ",")
-
-	} else {
-		exclude = bangumi.ExcludeFilter
-		include = bangumi.IncludeFilter
-	}
+	// var exclude, include string
+	// exclude = bangumi.ExcludeFilter
+	// include = bangumi.IncludeFilter
 	// 排除过滤：将逗号分隔的规则用 | 连接成正则表达式
 	if exclude != "" {
 		excludePattern := strings.ReplaceAll(exclude, ",", "|")
@@ -106,8 +101,8 @@ func FilterTorrent(torrent *model.Torrent, bangumi *model.Bangumi) bool {
 }
 
 // TorrentToBangumi 从 torrent 解析出 bangumi 信息,只会反回网络错误
-func TorrentToBangumi(torrent *model.Torrent, rssLink string) (*model.Bangumi, error) {
-	bangumi, err := OfficialTitleParse(torrent)
+func TorrentToBangumi(ctx context.Context, torrent *model.Torrent, rssLink string) (*model.Bangumi, error) {
+	bangumi, err := OfficialTitleParse(ctx, torrent)
 	metaInfo := parser.NewTitleMetaParse().Parse(torrent.Name)
 	// 为空在两种可能
 	// 1. torrent 的名字不太对, 当torrent 名字不对而没法解析的时候, 要显示bangumi
@@ -131,13 +126,13 @@ func TorrentToBangumi(torrent *model.Torrent, rssLink string) (*model.Bangumi, e
 
 	bangumi.IncludeFilter = strings.Join(parser.ParserConfig.Include, ",")
 	bangumi.ExcludeFilter = strings.Join(parser.ParserConfig.Filter, ",")
-	bangumi.RRSSLink = rssLink
+	bangumi.RSSLink = rssLink
 	bangumi.EpisodeMetadata = append(bangumi.EpisodeMetadata, *metaInfo)
 	return bangumi, nil
 }
 
-func createBangumi(db *database.DB, torrent *model.Torrent, rssLink string) {
-	bangumi, err := TorrentToBangumi(torrent, rssLink)
+func createBangumi(ctx context.Context, db *database.DB, torrent *model.Torrent, rssItem *model.RSSItem) {
+	bangumi, err := TorrentToBangumi(ctx, torrent, rssItem.Link)
 	if err != nil && apperrors.IsNetworkError(err) {
 		slog.Warn("[createBangumi] 网络错误，跳过该番剧的添加", "种子名称", torrent.Name, "error", err)
 		return

@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/model"
+	"goto-bangumi/internal/utils"
 
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/sync/singleflight"
@@ -122,7 +124,7 @@ func newRequestClient() *RequestClient {
 }
 
 // Get performs HTTP GET request with cache support and request deduplication
-func (r *RequestClient) Get(url string) ([]byte, error) {
+func (r *RequestClient) Get(ctx context.Context, url string) ([]byte, error) {
 	// 1. 快速路径：检查缓存
 	if data, found := globalCache.Get(url); found {
 		slog.Debug("[Network] Cache hit", "url", url)
@@ -134,7 +136,7 @@ func (r *RequestClient) Get(url string) ([]byte, error) {
 		// 2.2 执行实际 HTTP 请求
 		fmt.Println("Fetching URL:", url)
 		slog.Debug("[Network] Executing HTTP request", "url", url)
-		resp, err := r.client.R().Get(url)
+		resp, err := r.client.R().SetContext(ctx).Get(url)
 		if err != nil {
 			return nil, &apperrors.NetworkError{Err: fmt.Errorf("GET request failed: %w", err), StatusCode: 0}
 		}
@@ -167,8 +169,9 @@ func (r *RequestClient) Get(url string) ([]byte, error) {
 }
 
 // Post performs HTTP POST request
-func (r *RequestClient) Post(url string, contentType string, body io.Reader) ([]byte, error) {
+func (r *RequestClient) Post(ctx context.Context, url string, contentType string, body io.Reader) ([]byte, error) {
 	resp, err := r.client.R().
+		SetContext(ctx).
 		SetHeader("Content-Type", contentType).
 		SetBody(body).
 		Post(url)
@@ -204,8 +207,8 @@ func (r *RequestClient) Close() error {
 }
 
 // GetJSON performs GET request and returns parsed JSON as map
-func (r *RequestClient) GetJSON(url string) (map[string]any, error) {
-	resp, err := r.Get(url)
+func (r *RequestClient) GetJSON(ctx context.Context, url string) (map[string]any, error) {
+	resp, err := r.Get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -221,8 +224,8 @@ func (r *RequestClient) GetJSON(url string) (map[string]any, error) {
 
 // GetJSONTo performs GET request and unmarshals JSON response into the provided value
 // Usage: var result model.SearchResult; err := client.GetJSONTo(url, &result)
-func (r *RequestClient) GetJSONTo(url string, v any) error {
-	resp, err := r.Get(url)
+func (r *RequestClient) GetJSONTo(ctx context.Context, url string, v any) error {
+	resp, err := r.Get(ctx, url)
 	if err != nil {
 		return err
 	}
@@ -235,10 +238,10 @@ func (r *RequestClient) GetJSONTo(url string, v any) error {
 }
 
 // GetRSS fetches and parses RSS feed, returns the parsed RSS object
-func (r *RequestClient) GetRSS(url string) (*model.RSSXml, error) {
+func (r *RequestClient) GetRSS(ctx context.Context, url string) (*model.RSSXml, error) {
 	// 需要能判断出来是网络不好还是空的 xml
 	// 空的 https://mikanani.me/RSS/Search?searchstr=ANININI
-	resp, err := r.Get(url) // 这里是网络问题
+	resp, err := r.Get(ctx, url) // 这里是网络问题
 	if err != nil {
 		return nil, err
 	}
@@ -252,8 +255,8 @@ func (r *RequestClient) GetRSS(url string) (*model.RSSXml, error) {
 
 // GetTorrents fetches and parses RSS feed to extract torrents
 // 返回错误主是是区分是网络请求错误还是确实没有种子
-func (r *RequestClient) GetTorrents(url string) ([]*model.Torrent, error) {
-	rss, err := r.GetRSS(url)
+func (r *RequestClient) GetTorrents(ctx context.Context, url string) ([]*model.Torrent, error) {
+	rss, err := r.GetRSS(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -261,19 +264,19 @@ func (r *RequestClient) GetTorrents(url string) ([]*model.Torrent, error) {
 	torrents := make([]*model.Torrent, 0, len(rss.Torrents))
 	for _, item := range rss.Torrents {
 		// 移除名称中的换行符和多余空格
-		item.Name = processTitle(item.Name)
+		item.Name = utils.ProcessTitle(item.Name)
 		// 创建 Torrent 对象
 		torrent := &model.Torrent{
 			Name:     item.Name,
 			Homepage: item.Enclosure.URL,
-			URL:      url,
+			Link:      url,
 		}
 
 		if item.Enclosure.URL != "" {
-			torrent.URL = item.Enclosure.URL
+			torrent.Link = item.Enclosure.URL
 			torrent.Homepage = item.Link
 		} else {
-			torrent.URL = item.Link
+			torrent.Link = item.Link
 		}
 
 		torrents = append(torrents, torrent)
@@ -283,8 +286,8 @@ func (r *RequestClient) GetTorrents(url string) ([]*model.Torrent, error) {
 }
 
 // GetRSSTitle fetches RSS feed and returns the channel title
-func (r *RequestClient) GetRSSTitle(url string) (string, error) {
-	rss, err := r.GetRSS(url)
+func (r *RequestClient) GetRSSTitle(ctx context.Context, url string) (string, error) {
+	rss, err := r.GetRSS(ctx, url)
 	// GetRSS 已经包装了 NetworkError 或 ParseError，直接传递
 	if err != nil {
 		return "", err
@@ -293,8 +296,8 @@ func (r *RequestClient) GetRSSTitle(url string) (string, error) {
 }
 
 // PostData sends form data and files via POST request
-func (r *RequestClient) PostData(url string, data map[string]string, files map[string][]byte) ([]byte, error) {
-	req := r.client.R()
+func (r *RequestClient) PostData(ctx context.Context, url string, data map[string]string, files map[string][]byte) ([]byte, error) {
+	req := r.client.R().SetContext(ctx)
 
 	// Set form data
 	if data != nil {
@@ -323,17 +326,7 @@ func (r *RequestClient) PostData(url string, data map[string]string, files map[s
 	return resp.Body(), nil
 }
 
-func processTitle(title string) string {
-	// title 里面可能有"\n"
-	title = strings.ReplaceAll(title, "\n", "")
-	// 如果以【开头
-	if strings.HasPrefix(title, "【") {
-		title = strings.ReplaceAll(title, "【", "[")
-		title = strings.ReplaceAll(title, "】", "]")
-	}
-	title = strings.TrimSpace(title)
-	return title
-}
+
 
 // SetTestCache 用于测试时向全局缓存添加模拟数据
 // 这个函数只应该在测试代码中使用

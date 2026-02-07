@@ -54,7 +54,7 @@ func (cds *checkDownloadingService) handleDownloadingCheck(ctx context.Context, 
 		// 更新状态为 4（异常/手动停止下载）
 		data.Torrent.Downloaded = 4
 		db := database.GetDB()
-		if err := db.UpdateTorrent(data.Torrent); err != nil {
+		if err := db.AddTorrentError(data.Torrent.Link); err != nil {
 			slog.Error("[check downloading service] 更新种子状态失败", "error", err)
 		}
 		return
@@ -70,30 +70,11 @@ func (cds *checkDownloadingService) handleDownloadingCheck(ctx context.Context, 
 		slog.Warn("[check downloading service] 种子不存在", "hash", data.Torrent.DownloadUID)
 		return
 	}
-
-	eta := int64(info.ETA)
-
-	// 使用 calculate_eta 计算等待时间并睡眠
-	waitTime := calculateEta(eta)
-	time.Sleep(time.Duration(waitTime) * time.Second)
-
-	// 睡眠后再次检查下载状态
-	info2, err := download.Client.GetTorrentInfo(ctx, data.Torrent.DownloadUID)
-	if err != nil {
-		slog.Error("[check downloading service] 检查下载状态失败", "error", err, "hash", data.Torrent.DownloadUID)
-		return
-	}
-	if info2 == nil {
-		slog.Warn("[check downloading service] 种子不存在", "hash", data.Torrent.DownloadUID)
-		return
-	}
-
 	// 检查是否下载完成（Completed > 0 表示已完成，为 Unix 时间戳）
-	if info2.Completed > 0 {
-		// 下载完成，更新状态为 2
+	if info.Completed > 0 { // 下载完成，更新状态为 2
 		data.Torrent.Downloaded = 2
 		db := database.GetDB()
-		if err := db.UpdateTorrent(data.Torrent); err != nil {
+		if err := db.AddTorrentDownload(data.Torrent.Link); err != nil {
 			slog.Error("[check downloading service] 更新种子状态失败", "error", err)
 			return
 		}
@@ -103,14 +84,25 @@ func (cds *checkDownloadingService) handleDownloadingCheck(ctx context.Context, 
 			Torrent: data.Torrent,
 			Bangumi: data.Bangumi,
 		})
-	} else {
-		// 未完成，重新发布检查事件继续循环（携带 StartTime）
-		cds.bus.Publish(ctx, model.DownloadingCheckEvent{
-			Torrent:   data.Torrent,
-			Bangumi:   data.Bangumi,
-			StartTime: data.StartTime, // 保持原始开始时间
-		})
+		return
 	}
+
+	eta := int64(info.ETA)
+
+	// 使用 calculate_eta 计算等待时间并睡眠
+	waitTime := calculateEta(eta)
+	select {
+	case <-ctx.Done():
+		slog.Info("[check downloading service] 上下文已取消，停止等待", "hash", data.Torrent.DownloadUID)
+		return
+	case <-time.After(time.Duration(waitTime) * time.Second):
+	}
+	// 未完成，重新发布检查事件继续循环（携带 StartTime）
+	cds.bus.Publish(ctx, model.DownloadingCheckEvent{
+		Torrent:   data.Torrent,
+		Bangumi:   data.Bangumi,
+		StartTime: data.StartTime, // 保持原始开始时间
+	})
 }
 
 func (cds *checkDownloadingService) Start(ctx context.Context) {

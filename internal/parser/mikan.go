@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -22,10 +23,10 @@ func NewMikanParser() *MikanParser {
 	return &MikanParser{}
 }
 
-func (p *MikanParser) Parse(homepage string) (*model.MikanItem, error) {
+func (p *MikanParser) Parse(ctx context.Context, homepage string) (*model.MikanItem, error) {
 	// Fetch HTML content from the URL
 	client := network.GetRequestClient()
-	content, err := client.Get(homepage)
+	content, err := client.Get(ctx, homepage)
 	if err != nil {
 		// network 层已经返回 NetworkError，直接传递
 		return nil, err
@@ -34,10 +35,10 @@ func (p *MikanParser) Parse(homepage string) (*model.MikanItem, error) {
 	return p.parseHTML(content, homepage)
 }
 
-func (p *MikanParser) PosterParse(homepage string) (string, error) {
+func (p *MikanParser) PosterParse(ctx context.Context, homepage string) (string, error) {
 	// Fetch HTML content from the URL
 	client := network.GetRequestClient()
-	content, err := client.Get(homepage)
+	content, err := client.Get(ctx, homepage)
 	if err != nil {
 		return "", err
 	}
@@ -100,6 +101,7 @@ func (p *MikanParser) parseHTML(content []byte, pageURL string) (*model.MikanIte
 	return info, nil
 }
 
+// TODO: 可以直接用字符匹配来优化速度, 但优先度不高, 速度现在能接受
 // findBangumiTitle 查找 <p class="bangumi-title"> 中的文本内容
 func (p *MikanParser) findBangumiTitle(n *html.Node) string {
 	if n.Type == html.ElementNode && n.Data == "p" {

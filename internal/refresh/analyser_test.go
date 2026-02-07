@@ -106,16 +106,16 @@ func TestTorrentToBangumi(t *testing.T) {
 			name: "test1",
 			torrent: model.Torrent{
 				Name:     "[ANi] Chitose Is in the Ramune Bottle / 弹珠汽水瓶里的千岁同学 - 02 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
-				URL:      "magnet:?xt=urn:btih:EXAMPLE1",
+				Link:      "magnet:?xt=urn:btih:EXAMPLE1",
 				Homepage: "https://mikanani.me/Home/Episode/7c8c41e409922d9f2c34a726c92e77daf05558ff",
 			},
 			rss: model.RSSItem{
 				Name: "Chitose Is in the Ramune Bottle / 弹珠汽水瓶里的千岁同学",
-				URL:  "https://mikanani.me/RSS/Search?searchstr=ANI",
+				Link:  "https://mikanani.me/RSS/Search?searchstr=ANI",
 			},
 			wantBangumi: &model.Bangumi{
 				OfficialTitle: "弹珠汽水瓶里的千岁同学",
-				RRSSLink:       "https://mikanani.me/RSS/Search?searchstr=ANI",
+				RSSLink:       "https://mikanani.me/RSS/Search?searchstr=ANI",
 				Year:          "2025",
 				Season:        1,
 				PosterLink:    "https://mikanani.me/images/Bangumi/202510/37749647.jpg",
@@ -140,7 +140,7 @@ func TestTorrentToBangumi(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotBangumi,err := TorrentToBangumi(&tt.torrent, tt.rss.URL)
+			gotBangumi,err := TorrentToBangumi(&tt.torrent, tt.rss.Link)
 			if err != nil {
 				t.Errorf("TorrentToBangumi() error = %v, want nil", err)
 				return
@@ -152,8 +152,8 @@ func TestTorrentToBangumi(t *testing.T) {
 			if gotBangumi.OfficialTitle != tt.wantBangumi.OfficialTitle {
 				t.Errorf("OfficialTitle = %v, want %v", gotBangumi.OfficialTitle, tt.wantBangumi.OfficialTitle)
 			}
-			if gotBangumi.RRSSLink != tt.wantBangumi.RRSSLink {
-				t.Errorf("RssLink = %v, want %v", gotBangumi.RRSSLink, tt.wantBangumi.RRSSLink)
+			if gotBangumi.RSSLink != tt.wantBangumi.RSSLink {
+				t.Errorf("RssLink = %v, want %v", gotBangumi.RSSLink, tt.wantBangumi.RSSLink)
 			}
 			if gotBangumi.Year != tt.wantBangumi.Year {
 				t.Errorf("Year = %v, want %v", gotBangumi.Year, tt.wantBangumi.Year)
@@ -199,7 +199,7 @@ func TestCreateBangumi(t *testing.T) {
 
 	torrent := &model.Torrent{
 		Name:     "[ANi] Chitose Is in the Ramune Bottle / 弹珠汽水瓶里的千岁同学 - 02 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
-		URL:      "magnet:?xt=urn:btih:EXAMPLE1",
+		Link:      "magnet:?xt=urn:btih:EXAMPLE1",
 		Homepage: "https://mikanani.me/Home/Episode/7c8c41e409922d9f2c34a726c92e77daf05558ff",
 	}
 	rssLink := "https://mikanani.me/RSS/Search?searchstr=ANI"
@@ -226,8 +226,8 @@ func TestCreateBangumi(t *testing.T) {
 	if bangumi.Season != 1 {
 		t.Errorf("Season = %v, want 1", bangumi.Season)
 	}
-	if bangumi.RRSSLink != rssLink {
-		t.Errorf("RRSSLink = %v, want %v", bangumi.RRSSLink, rssLink)
+	if bangumi.RSSLink != rssLink {
+		t.Errorf("RRSSLink = %v, want %v", bangumi.RSSLink, rssLink)
 	}
 
 	// 验证 MikanItem

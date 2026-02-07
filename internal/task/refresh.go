@@ -66,10 +66,10 @@ func (t *RSSRefreshTask) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			slog.Debug("[refresh] 刷新 RSS 源", "名称", rss.Name, "URL", rss.URL)
+			slog.Debug("[refresh] 刷新 RSS 源", "名称", rss.Name, "URL", rss.Link)
 
 			// 调用 refresh 模块的刷新方法
-			refresh.RefreshRSS(ctx, rss.URL)
+			refresh.RefreshRSS(ctx, rss.Link)
 
 			// 为了避免短时间内请求过多，每个 RSS 源之间间隔一点时间
 			time.Sleep(2 * time.Second)

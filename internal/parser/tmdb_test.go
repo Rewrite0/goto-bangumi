@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"testing"
@@ -42,7 +43,7 @@ func TestTMDBSearch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := NewTMDBParse()
-			results, err := parser.TMDBSearch(tt.keyword)
+			results, err := parser.TMDBSearch(context.Background(), tt.keyword)
 			if err != nil {
 				t.Fatalf("TMDBSearch() error = %v", err)
 			}
@@ -92,7 +93,7 @@ func TestTmdbParse(t *testing.T){
 		t.Run(tt.name, func(t *testing.T) {
 			// 缓存已在 TestMain 中集中设置
 			parser := NewTMDBParse()
-			info, err := parser.TMDBParse(tt.title, "zh")
+			info, err := parser.TMDBParse(context.Background(), tt.title, "zh")
 			if err != nil {
 				t.Fatalf("TMDBParse() error = %v", err)
 			}

@@ -27,8 +27,8 @@ var DQueue *DownloadQueue = &DownloadQueue{
 }
 
 func (dq *DownloadQueue) Add(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi) {
-	if _, exists := dq.InQueue.Load(torrent.URL); exists {
-		slog.Debug("种子已在下载队列中，跳过添加", "Name", torrent.Name, "URL", torrent.URL)
+	if _, exists := dq.InQueue.Load(torrent.Link); exists {
+		slog.Debug("[Queue]种子已在下载队列中，跳过添加", "Name", torrent.Name, "Link", torrent.Link)
 		return
 	}
 
@@ -38,13 +38,13 @@ func (dq *DownloadQueue) Add(ctx context.Context, torrent *model.Torrent, bangum
 	}
 	select {
 	case <-ctx.Done():
-		slog.Warn("下载队列已关闭，无法添加种子", "Name", torrent.Name)
+		slog.Warn("[Queue]下载队列已关闭，无法添加种子", "Name", torrent.Name)
 	case dq.Queue <- tb:
 		// 成功加入队列后，标记该 URL 正在队列中
-		dq.InQueue.Store(torrent.URL, true)
+		dq.InQueue.Store(torrent.Link, true)
 		db := database.GetDB()
-		_ = db.CreateTorrent(torrent)
-		slog.Debug("种子已加入下载队列", "Name", torrent.Name, "URL", torrent.URL)
+		_ = db.CreateTorrent(ctx,torrent)
+		slog.Debug("种子已加入下载队列", "Name", torrent.Name, "Link", torrent.Link)
 	}
 }
 
@@ -55,7 +55,7 @@ func (dq *DownloadQueue) Clear() {
 		case tb := <-dq.Queue:
 
 			// 清理队列时也要移除对应的标记
-			dq.InQueue.Delete(tb.Torrent.URL)
+			dq.InQueue.Delete(tb.Torrent.Link)
 		default:
 			return
 		}

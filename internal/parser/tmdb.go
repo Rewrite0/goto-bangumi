@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -68,13 +69,13 @@ func NewTMDBParse() *TMDBParser {
 }
 
 // TMDBSearch searches for TV shows on TMDB by keyword
-func (p *TMDBParser) TMDBSearch(keyword string) ([]model.ShowInfo, error) {
+func (p *TMDBParser) TMDBSearch(ctx context.Context, keyword string) ([]model.ShowInfo, error) {
 	url := SearchURL(keyword)
 	slog.Debug("[TMDB] Searching TV shows", "keyword", keyword, "url", url)
 
 	var searchResult model.SearchResult
 	client := network.GetRequestClient()
-	if err := client.GetJSONTo(url, &searchResult); err != nil {
+	if err := client.GetJSONTo(ctx, url, &searchResult); err != nil {
 		return nil, err
 	}
 
@@ -83,13 +84,13 @@ func (p *TMDBParser) TMDBSearch(keyword string) ([]model.ShowInfo, error) {
 }
 
 // TMDBInfo fetches detailed information for a specific TV show
-func (p *TMDBParser) TMDBInfo(id int, language string) (*model.TVShow, error) {
+func (p *TMDBParser) TMDBInfo(ctx context.Context, id int, language string) (*model.TVShow, error) {
 	url := InfoURL(id, language)
 	slog.Debug("[TMDB] Fetching TV show info", "id", id, "language", language)
 
 	var tvShow model.TVShow
 	client := network.GetRequestClient()
-	if err := client.GetJSONTo(url, &tvShow); err != nil {
+	if err := client.GetJSONTo(ctx, url, &tvShow); err != nil {
 		return nil, err
 	}
 
@@ -163,11 +164,11 @@ func FindAnimation(contents []model.ShowInfo) *model.ShowInfo {
 
 // TMDBParse searches and parses TMDB information for a bangumi
 // Returns TMDBInfo or nil if not found
-func (p *TMDBParser) TMDBParse(title string, language string) (*model.TmdbItem, error) {
+func (p *TMDBParser) TMDBParse(ctx context.Context, title string, language string) (*model.TmdbItem, error) {
 	slog.Debug("[TMDB] Starting TMDB parser", "title", title, "language", language)
 
 	// First search attempt
-	contents, err := p.TMDBSearch(title)
+	contents, err := p.TMDBSearch(ctx, title)
 	if err != nil {
 		if apperrors.GetStatusCode(err) == 401 {
 			slog.Error("[TMDB] Unauthorized: Invalid API key")
@@ -179,7 +180,7 @@ func (p *TMDBParser) TMDBParse(title string, language string) (*model.TmdbItem, 
 	if len(contents) == 0 {
 		slog.Debug("[TMDB] No results found, retrying without spaces")
 		titleNoSpaces := strings.ReplaceAll(title, " ", "")
-		contents, err = p.TMDBSearch(titleNoSpaces)
+		contents, err = p.TMDBSearch(ctx, titleNoSpaces)
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +203,7 @@ func (p *TMDBParser) TMDBParse(title string, language string) (*model.TmdbItem, 
 	slog.Debug("[TMDB] Animation found", "name", content.Name, "id", content.ID)
 
 	// 对找到的动画获取详细信息
-	tvShow, err := p.TMDBInfo(content.ID, language)
+	tvShow, err := p.TMDBInfo(ctx, content.ID, language)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get TV show info: %w", err)
 	}
@@ -238,8 +239,8 @@ func (p *TMDBParser) TMDBParse(title string, language string) (*model.TmdbItem, 
 }
 
 // ParseTMDB is a convenience function that creates a parser, parses, and closes
-func ParseTMDB(title string, language string) (*model.TmdbItem, error) {
+func ParseTMDB(ctx context.Context, title string, language string) (*model.TmdbItem, error) {
 	parser := NewTMDBParse()
 
-	return parser.TMDBParse(title, language)
+	return parser.TMDBParse(ctx, title, language)
 }

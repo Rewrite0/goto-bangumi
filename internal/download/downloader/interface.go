@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 
@@ -21,37 +22,37 @@ type BaseDownloader interface {
 	Init(config *model.DownloaderConfig) error
 
 	// Auth 用户认证
-	Auth() (bool, error)
+	Auth(ctx context.Context) (bool, error)
 
 	// CheckHost 检查主机连通性
-	// CheckHost() (bool, error)
+	// CheckHost(ctx context.Context) (bool, error)
 
 	// Logout 登出
-	Logout() (bool, error)
+	Logout(ctx context.Context) (bool, error)
 
 	// GetTorrentFiles 获取种子的所有文件列表
-	GetTorrentFiles(hash string) ([]string, error)
+	GetTorrentFiles(ctx context.Context, hash string) ([]string, error)
 
 	// GetTorrentInfo 获取单个种子的信息
-	GetTorrentInfo(hash string)(*model.TorrentDownloadInfo,error)
+	GetTorrentInfo(ctx context.Context, hash string) (*model.TorrentDownloadInfo, error)
 
 	// TorrentsInfo 获取种子信息列表
-	TorrentsInfo(statusFilter, category string, tag *string, limit int) ([]map[string]interface{}, error)
+	TorrentsInfo(ctx context.Context, statusFilter, category string, tag *string, limit int) ([]map[string]any, error)
 
 	// Rename 重命名种子文件
-	Rename(torrentHash, oldPath, newPath string) (bool, error)
+	Rename(ctx context.Context, torrentHash, oldPath, newPath string) (bool, error)
 
 	// Move 移动种子到新位置
-	Move(hashes []string, newLocation string) (bool, error)
+	Move(ctx context.Context, hashes []string, newLocation string) (bool, error)
 
 	// Add 添加种子
-	Add(torrentInfo *model.TorrentInfo, savePath string) ([]string, error)
+	Add(ctx context.Context, torrentInfo *model.TorrentInfo, savePath string) ([]string, error)
 
 	// CheckHash 检查种子是否存在，返回真实的hash
-	CheckHash(hash string) (string, error)
+	CheckHash(ctx context.Context, hash string) (string, error)
 
 	// Delete 删除种子
-	Delete(hashes []string) (bool, error)
+	Delete(ctx context.Context, hashes []string) (bool, error)
 
 	// GetInterval 获取下载器轮询间隔时间，单位ms
 	GetInterval() int
@@ -68,6 +69,8 @@ func NewDownloader(downloaderType string) (BaseDownloader) {
 	switch strings.ToLower(downloaderType) {
 	case "qbittorrent":
 		d = NewQBittorrentDownloader()
+	case "mock":
+		d = NewMockDownloader()
 	// case "alist":
 	// 	// TODO: Alist 下载器待实现
 	// 	return nil

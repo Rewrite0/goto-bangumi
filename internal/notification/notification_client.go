@@ -2,6 +2,7 @@
 package notification
 
 import (
+	"context"
 	"log/slog"
 
 	"goto-bangumi/internal/conf"
@@ -27,7 +28,7 @@ func (c *Client) Init(config *model.NotificationConfig) {
 
 
 // processMsg 处理为一个统一的发送文字
-func (c *Client) processMsg(message *model.Message) {
+func (c *Client) processMsg(ctx context.Context, message *model.Message) {
 	// 如果有集数信息, 那么就是一个更新通知
 	if message.Episode != "" {
 		message.Message = "番剧名称：" + message.Title +
@@ -38,7 +39,7 @@ func (c *Client) processMsg(message *model.Message) {
 	// 对海报进行处理, 拿到海报的数据
 	if message.PosterLink != "" {
 
-		resp, err := network.LoadImage(message.PosterLink)
+		resp, err := network.LoadImage(ctx, message.PosterLink)
 		if err != nil {
 			slog.Error("[Notification] Failed to download poster image", "error", err)
 			return
@@ -48,20 +49,15 @@ func (c *Client) processMsg(message *model.Message) {
 }
 
 // Send 发送通知
-func (c *Client) Send(message *model.Message) {
+func (c *Client) Send(ctx context.Context, message *model.Message) {
 	if c.notifier == nil {
 		slog.Warn("[Notification] No notifier initialized, skipping notification")
 		return
 	}
 
 	// 处理消息内容
-	c.processMsg(message)
+	c.processMsg(ctx, message)
 
-	// 发送通知
-	if c.notifier.PostMsg == nil {
-		slog.Warn("[Notification] Notifier does not implement PostMsg, skipping notification")
-		return
-	}
 	slog.Debug("[Notification] Sending notification", "title", message.Title, "episode", message.Episode)
 }
 

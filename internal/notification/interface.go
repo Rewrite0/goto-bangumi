@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"context"
 
 	"goto-bangumi/internal/model"
 )
@@ -9,7 +10,7 @@ import (
 type Notifier interface {
 	// PostMsg 发送通知消息
 	// 返回 true 表示发送成功，false 表示失败
-	PostMsg(message *model.Message) (error)
+	PostMsg(ctx context.Context, message *model.Message) error
 
 	// Init 初始化通知器
 	Init(config *model.NotificationConfig)

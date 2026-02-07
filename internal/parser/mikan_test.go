@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	_ "embed"
 	"testing"
 
@@ -62,7 +63,7 @@ func TestMikanParse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// 缓存已在 TestMain 中集中设置
-			mikanInfo, _ := parser.Parse(tt.homepage)
+			mikanInfo, _ := parser.Parse(context.Background(), tt.homepage)
 			if mikanInfo == nil {
 				t.Fatalf("Parse(%q) returned nil", tt.homepage)
 			}
@@ -110,7 +111,7 @@ func TestMikanPoster(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// 缓存已在 TestMain 中集中设置
-			posterLink, _ := parser.PosterParse(tt.homepage)
+			posterLink, _ := parser.PosterParse(context.Background(), tt.homepage)
 			if posterLink == "" {
 				t.Fatalf("Parse(%q) returned nil", tt.homepage)
 			}
@@ -128,7 +129,7 @@ func TestMikanParseEdgeCase(t *testing.T) {
 	t.Run("没有RSS链接（无法获取mikanID）", func(t *testing.T) {
 		homepage := "https://mikanani.me/Home/Episode/699000310671bae565c37abb20d119824efeb6f0"
 		// 缓存已在 TestMain 中集中设置
-		mikanInfo, err := parser.Parse(homepage)
+		mikanInfo, err := parser.Parse(context.Background(), homepage)
 
 		// 应该返回错误，因为页面没有RSS链接
 		if err == nil {

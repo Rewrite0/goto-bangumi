@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -9,17 +10,11 @@ import (
 	"strings"
 )
 
+//TODO: 要防止一些恶意的链接
 var (
 	dataDir   = "data"
 	posterDir = filepath.Join(dataDir, "posters")
 )
-
-func init() {
-	// 创建海报目录（如果不存在）
-	if err := os.MkdirAll(posterDir, 0o755); err != nil {
-		slog.Error("failed to create poster directory", "error", err)
-	}
-}
 
 // urlToBase64 converts URL to base64 encoded string for filename (reversible)
 func urlToBase64(url string) string {
@@ -41,13 +36,13 @@ func base64ToURL(encoded string) (string, error) {
 }
 
 // SaveImage downloads and saves an image to cache
-func SaveImage(url string) ([]byte, error) {
+func SaveImage(ctx context.Context, url string) ([]byte, error) {
 	// Generate base64 encoded filename
 	imgEncoded := urlToBase64(url)
 	imagePath := filepath.Join(posterDir, imgEncoded)
 
 	// Download image
-	imgData, err := defaultClient.Get(url)
+	imgData, err := defaultClient.Get(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download image: %w", err)
 	}
@@ -66,7 +61,7 @@ func SaveImage(url string) ([]byte, error) {
 }
 
 // LoadImage 从缓存加载图片，如果不存在则下载
-func LoadImage(imgPath string) ([]byte, error) {
+func LoadImage(ctx context.Context, imgPath string) ([]byte, error) {
 	// Check if it's a URL
 	if strings.HasPrefix(imgPath, "http") {
 		imgPath = urlToBase64(imgPath)
@@ -94,7 +89,7 @@ func LoadImage(imgPath string) ([]byte, error) {
 		return nil, fmt.Errorf("cannot download image: invalid URL from path %s", imgPath)
 	}
 
-	imgData, err := SaveImage(decodedURL)
+	imgData, err := SaveImage(ctx, decodedURL)
 	if err != nil {
 		return nil, err
 	}

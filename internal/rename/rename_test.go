@@ -1,8 +1,11 @@
 package rename
 
 import (
+	"context"
 	"testing"
 
+	"goto-bangumi/internal/download"
+	"goto-bangumi/internal/download/downloader"
 	"goto-bangumi/internal/model"
 )
 
@@ -213,5 +216,67 @@ func TestGenPath_NegativeOffset(t *testing.T) {
 
 	if meta != nil && meta.Episode != 14 {
 		t.Errorf("GenPath() raw episode = %d, want 14", meta.Episode)
+	}
+}
+
+func TestGetBangumi(t *testing.T) {
+	// 初始化 MockDownloader
+	mockDownloader := downloader.NewMockDownloader()
+	mockConfig := &model.DownloaderConfig{
+		SavePath: "/downloads",
+	}
+	mockDownloader.Init(mockConfig)
+
+	// 设置 download.Client
+	download.Client.Downloader = mockDownloader
+	download.Client.SavePath = mockConfig.SavePath
+
+	tests := []struct {
+		name            string
+		torrent         *model.Torrent
+		wantBangumiName string
+		wantSeason      int
+		wantErr         bool
+	}{
+		{
+			name: "我推的孩子-Season2",
+			torrent: &model.Torrent{
+				DownloadUID: "1317e47882474c771e29ed2271b282fbfb56e7d2",
+				Name:        "[Dynamis One] [Oshi no Ko] - 26",
+			},
+			wantBangumiName: "我推的孩子",
+			wantSeason:      2,
+			wantErr:         false,
+		},
+		{
+			name: "与游戏中心的少女异文化交流的故事-Season1",
+			torrent: &model.Torrent{
+				DownloadUID: "e0a951e431269be7b556101447fbdf9d0842d72f",
+				Name:        "与游戏中心的少女异文化交流的故事",
+			},
+			wantBangumiName: "与游戏中心的少女异文化交流的故事",
+			wantSeason:      1,
+			wantErr:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bangumi, err := GetBangumi(context.Background(), tt.torrent)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetBangumi() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if err == nil {
+				if bangumi.OfficialTitle != tt.wantBangumiName {
+					t.Errorf("GetBangumi() OfficialTitle = %q, want %q", bangumi.OfficialTitle, tt.wantBangumiName)
+				}
+				if bangumi.Season != tt.wantSeason {
+					t.Errorf("GetBangumi() Season = %d, want %d", bangumi.Season, tt.wantSeason)
+				}
+			}
+		})
 	}
 }

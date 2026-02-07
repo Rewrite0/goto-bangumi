@@ -116,7 +116,7 @@ type Bangumi struct {
 	MikanItem *MikanItem `gorm:"foreignKey:MikanID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 	TmdbItem  *TmdbItem  `gorm:"foreignKey:TmdbID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 	// 属于一个 RSSItem
-	RRSSLink string `json:"rss_link" gorm:"default:'';comment:'关联的RSS订阅链接'"`
+	RSSLink string `json:"rss_link" gorm:"default:'';comment:'关联的RSS订阅链接'"`
 
 	// has many关系，关联 BangumiParse
 	EpisodeMetadata []EpisodeMetadata `gorm:"foreignKey:BangumiID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`

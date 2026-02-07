@@ -17,7 +17,7 @@ type TorrentBangumi struct {
 // 种子要不要海报数据, 因为可能 collection 里没有
 // Renamed 的含义: 0: 未下载, 1: 发送到下载器 2: 下载完成 4: 异常/手动停止下载
 type Torrent struct {
-	URL         string    `gorm:"primaryKey;column:url" json:"url"`
+	Link         string    `gorm:"primaryKey;column:Link" json:"link"`
 	DownloadUID string    `gorm:"index;column:download_uid" json:"download_uid"`
 	Name        string    `gorm:"default:'';column:name" json:"name"`
 	CreatedAt   time.Time `gorm:"autoCreateTime;index;column:created_at" json:"created_at"`

@@ -2,9 +2,9 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"goto-bangumi/internal/model"
@@ -30,15 +30,6 @@ func NewDB(dsn *string) (*DB, error) {
 	if dsn != nil {
 		path = *dsn
 	}
-
-	// 内存数据库不需要创建目录
-	if path != ":memory:" {
-		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("创建数据库目录失败: %w", err)
-		}
-	}
-
 	gormDB, err := gorm.Open(sqlite.Open(path), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
@@ -100,7 +91,6 @@ func GetDB() *DB {
 	if globalDB == nil {
 		InitDB(nil)
 	}
-
 	return globalDB
 }
 
@@ -114,85 +104,18 @@ func CloseDB() error {
 	return nil
 }
 
-// ============ RSS 相关方法 ============
-
-// CreateRSS 创建 RSS 项
-func (db *DB) CreateRSS(item *model.RSSItem) error {
-	return db.Save(item).Error
-}
-
-// UpdateRSS 更新 RSS 项
-func (db *DB) UpdateRSS(item *model.RSSItem) error {
-	return db.Save(item).Error
-}
-
-// DeleteRSS 删除 RSS 项
-func (db *DB) DeleteRSS(id uint) error {
-	return db.Delete(&model.RSSItem{}, id).Error
-}
-
-// GetRSSByID 根据 ID 获取 RSS 项
-func (db *DB) GetRSSByID(id uint) (*model.RSSItem, error) {
-	var item model.RSSItem
-	err := db.First(&item, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
-}
-
-// GetRSSByURL 根据 URL 获取 RSS 项
-func (db *DB) GetRSSByURL(url string) (*model.RSSItem, error) {
-	var item model.RSSItem
-	err := db.Where("url = ?", url).First(&item).Error
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
-}
-
-// ListRSS 获取所有 RSS 项
-func (db *DB) ListRSS() ([]*model.RSSItem, error) {
-	var items []*model.RSSItem
-	err := db.Find(&items).Error
-	return items, err
-}
-
-// ListActiveRSS 获取所有激活的 RSS 项
-func (db *DB) ListActiveRSS() ([]*model.RSSItem, error) {
-	var items []*model.RSSItem
-	err := db.Where("enabled = ?", true).Find(&items).Error
-	return items, err
-}
-
-// SetRSSEnabled 设置 RSS 项的启用状态
-func (db *DB) SetRSSEnabled(id uint, enabled bool) error {
-	return db.Model(&model.RSSItem{}).
-		Where("id = ?", id).
-		Update("enabled", enabled).Error
-}
 
 // ============ Torrent 相关方法 ============
 
-// CreateTorrent 创建或更新种子
-func (db *DB) CreateTorrent(torrent *model.Torrent) error {
-	return db.Save(torrent).Error
-}
-
 // UpdateTorrent 更新种子
-func (db *DB) UpdateTorrent(torrent *model.Torrent) error {
-	return db.Save(torrent).Error
-}
-
-// DeleteTorrent 删除种子
-func (db *DB) DeleteTorrent(id uint) error {
-	return db.Delete(&model.Torrent{}, id).Error
+func (db *DB) UpdateTorrent(ctx context.Context, torrent *model.Torrent) error {
+	return db.WithContext(ctx).Save(torrent).Error
 }
 
 // GetTorrentByID 根据 ID 获取种子
-func (db *DB) GetTorrentByID(id uint) (*model.Torrent, error) {
+func (db *DB) GetTorrentByID(ctx context.Context, id uint) (*model.Torrent, error) {
 	var torrent model.Torrent
-	err := db.First(&torrent, id).Error
+	err := db.WithContext(ctx).First(&torrent, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -200,9 +123,9 @@ func (db *DB) GetTorrentByID(id uint) (*model.Torrent, error) {
 }
 
 // GetTorrentByURL 根据 URL 获取种子
-func (db *DB) GetTorrentByURL(url string) (*model.Torrent, error) {
+func (db *DB) GetTorrentByURL(ctx context.Context, url string) (*model.Torrent, error) {
 	var torrent model.Torrent
-	err := db.Where("url = ?", url).First(&torrent).Error
+	err := db.WithContext(ctx).Where("url = ?", url).First(&torrent).Error
 	if err != nil {
 		return nil, err
 	}
@@ -210,50 +133,43 @@ func (db *DB) GetTorrentByURL(url string) (*model.Torrent, error) {
 }
 
 // GetTorrentByDownloadUID 根据下载 UID 获取种子
-func (db *DB) GetTorrentByDownloadUID(duid string) (*model.Torrent, error) {
+func (db *DB) GetTorrentByDownloadUID(ctx context.Context, duid string) (*model.Torrent, error) {
 	var torrent model.Torrent
-	err := db.Where("download_uid = ?", duid).First(&torrent).Error
+	err := db.WithContext(ctx).Where("download_uid = ?", duid).First(&torrent).Error
 	if err != nil {
 		return nil, err
 	}
 	return &torrent, nil
 }
 
-// ListTorrent 获取所有种子
-func (db *DB) ListTorrent() ([]*model.Torrent, error) {
-	var torrents []*model.Torrent
-	err := db.Find(&torrents).Error
-	return torrents, err
-}
-
 // ListTorrentByBangumi 根据番剧信息获取种子列表
-func (db *DB) ListTorrentByBangumi(title string, season int, rssLink string) ([]*model.Torrent, error) {
+func (db *DB) ListTorrentByBangumi(ctx context.Context, title string, season int, rssLink string) ([]*model.Torrent, error) {
 	var torrents []*model.Torrent
-	err := db.Where("bangumi_official_title = ? AND bangumi_season = ? AND rss_link = ?",
+	err := db.WithContext(ctx).Where("bangumi_official_title = ? AND bangumi_season = ? AND rss_link = ?",
 		title, season, rssLink).Find(&torrents).Error
 	return torrents, err
 }
 
 // FindUnrenamedTorrent 查询已下载但未重命名的种子
-func (db *DB) FindUnrenamedTorrent() ([]*model.Torrent, error) {
+func (db *DB) FindUnrenamedTorrent(ctx context.Context) ([]*model.Torrent, error) {
 	var torrents []*model.Torrent
-	err := db.Where("downloaded = ? AND renamed = ?", true, false).
+	err := db.WithContext(ctx).Where("downloaded = ? AND renamed = ?", true, false).
 		Find(&torrents).Error
 	return torrents, err
 }
 
-// CheckNewTorrents 检查新种子（未下载或不存在的种子）
-func (db *DB) CheckNewTorrents(torrents []*model.Torrent) ([]*model.Torrent, error) {
+// CheckNewTorrents 检查新种子（不存在的种子）
+func (db *DB) CheckNewTorrents(ctx context.Context, torrents []*model.Torrent) ([]*model.Torrent, error) {
 	var newTorrents []*model.Torrent
 
 	for _, torrent := range torrents {
-		existing, err := db.GetTorrentByURL(torrent.URL)
+		existing, err := db.GetTorrentByURL(ctx, torrent.Link)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return nil, err
 		}
 
-		// 不存在或未下载的种子
-		if existing == nil || existing.Downloaded == 0 {
+		// 不存在的种子
+		if existing == nil {
 			newTorrents = append(newTorrents, torrent)
 		}
 	}
@@ -262,26 +178,26 @@ func (db *DB) CheckNewTorrents(torrents []*model.Torrent) ([]*model.Torrent, err
 }
 
 // DeleteTorrentByURL 根据 URL 删除种子
-func (db *DB) DeleteTorrentByURL(url string) error {
-	return db.Where("url = ?", url).Delete(&model.Torrent{}).Error
+func (db *DB) DeleteTorrentByURL(ctx context.Context, url string) error {
+	return db.WithContext(ctx).Where("url = ?", url).Delete(&model.Torrent{}).Error
 }
 
 // DeleteTorrentByDownloadUID 根据下载 UID 删除种子
-func (db *DB) DeleteTorrentByDownloadUID(duid string) error {
-	return db.Where("download_uid = ?", duid).Delete(&model.Torrent{}).Error
+func (db *DB) DeleteTorrentByDownloadUID(ctx context.Context, duid string) error {
+	return db.WithContext(ctx).Where("download_uid = ?", duid).Delete(&model.Torrent{}).Error
 }
 
 // ============ Mikan 关联方法 ============
 
 // CreateMikanItem 创建或更新 Mikan 项
-func (db *DB) CreateMikanItem(item *model.MikanItem) error {
-	return db.Save(item).Error
+func (db *DB) CreateMikanItem(ctx context.Context, item *model.MikanItem) error {
+	return db.WithContext(ctx).Save(item).Error
 }
 
 // GetMikanItemByID 根据 MikanID 获取 Mikan 项
-func (db *DB) GetMikanItemByID(mikanID int) (*model.MikanItem, error) {
+func (db *DB) GetMikanItemByID(ctx context.Context, mikanID int) (*model.MikanItem, error) {
 	var item model.MikanItem
-	err := db.Where("mikan_id = ?", mikanID).First(&item).Error
+	err := db.WithContext(ctx).Where("mikan_id = ?", mikanID).First(&item).Error
 	if err != nil {
 		return nil, err
 	}
@@ -289,22 +205,22 @@ func (db *DB) GetMikanItemByID(mikanID int) (*model.MikanItem, error) {
 }
 
 // GetBangumisByMikanID 根据 MikanID 查找所有关联的 Bangumi
-func (db *DB) GetBangumisByMikanID(mikanID int) ([]*model.Bangumi, error) {
+func (db *DB) GetBangumisByMikanID(ctx context.Context, mikanID int) ([]*model.Bangumi, error) {
 	var bangumis []*model.Bangumi
-	err := db.Where("mikan_id = ?", mikanID).Find(&bangumis).Error
+	err := db.WithContext(ctx).Where("mikan_id = ?", mikanID).Find(&bangumis).Error
 	return bangumis, err
 }
 
 // UpdateBangumiMikan 更新 Bangumi 的 Mikan 关联
-func (db *DB) UpdateBangumiMikan(bangumiID uint, mikanID int) error {
-	return db.Model(&model.Bangumi{}).
+func (db *DB) UpdateBangumiMikan(ctx context.Context, bangumiID uint, mikanID int) error {
+	return db.WithContext(ctx).Model(&model.Bangumi{}).
 		Where("id = ?", bangumiID).
 		Update("mikan_id", mikanID).Error
 }
 
 // RemoveBangumiMikan 移除 Bangumi 的 Mikan 关联
-func (db *DB) RemoveBangumiMikan(bangumiID uint) error {
-	return db.Model(&model.Bangumi{}).
+func (db *DB) RemoveBangumiMikan(ctx context.Context, bangumiID uint) error {
+	return db.WithContext(ctx).Model(&model.Bangumi{}).
 		Where("id = ?", bangumiID).
 		Update("mikan_id", nil).Error
 }
@@ -312,14 +228,14 @@ func (db *DB) RemoveBangumiMikan(bangumiID uint) error {
 // ============ TMDB 关联方法 ============
 
 // CreateTmdbItem 创建或更新 TMDB 项
-func (db *DB) CreateTmdbItem(item *model.TmdbItem) error {
-	return db.Save(item).Error
+func (db *DB) CreateTmdbItem(ctx context.Context, item *model.TmdbItem) error {
+	return db.WithContext(ctx).Save(item).Error
 }
 
 // GetTmdbItemByID 根据 TmdbID 获取 TMDB 项
-func (db *DB) GetTmdbItemByID(tmdbID int) (*model.TmdbItem, error) {
+func (db *DB) GetTmdbItemByID(ctx context.Context, tmdbID int) (*model.TmdbItem, error) {
 	var item model.TmdbItem
-	err := db.Where("tmdb_id = ?", tmdbID).First(&item).Error
+	err := db.WithContext(ctx).Where("tmdb_id = ?", tmdbID).First(&item).Error
 	if err != nil {
 		return nil, err
 	}
@@ -327,22 +243,22 @@ func (db *DB) GetTmdbItemByID(tmdbID int) (*model.TmdbItem, error) {
 }
 
 // GetBangumisByTmdbID 根据 TmdbID 查找所有关联的 Bangumi
-func (db *DB) GetBangumisByTmdbID(tmdbID int) ([]*model.Bangumi, error) {
+func (db *DB) GetBangumisByTmdbID(ctx context.Context, tmdbID int) ([]*model.Bangumi, error) {
 	var bangumis []*model.Bangumi
-	err := db.Where("tmdb_id = ?", tmdbID).Find(&bangumis).Error
+	err := db.WithContext(ctx).Where("tmdb_id = ?", tmdbID).Find(&bangumis).Error
 	return bangumis, err
 }
 
 // UpdateBangumiTmdb 更新 Bangumi 的 TMDB 关联
-func (db *DB) UpdateBangumiTmdb(bangumiID uint, tmdbID int) error {
-	return db.Model(&model.Bangumi{}).
+func (db *DB) UpdateBangumiTmdb(ctx context.Context, bangumiID uint, tmdbID int) error {
+	return db.WithContext(ctx).Model(&model.Bangumi{}).
 		Where("id = ?", bangumiID).
 		Update("tmdb_id", tmdbID).Error
 }
 
 // RemoveBangumiTmdb 移除 Bangumi 的 TMDB 关联
-func (db *DB) RemoveBangumiTmdb(bangumiID uint) error {
-	return db.Model(&model.Bangumi{}).
+func (db *DB) RemoveBangumiTmdb(ctx context.Context, bangumiID uint) error {
+	return db.WithContext(ctx).Model(&model.Bangumi{}).
 		Where("id = ?", bangumiID).
 		Update("tmdb_id", nil).Error
 }
@@ -350,21 +266,21 @@ func (db *DB) RemoveBangumiTmdb(bangumiID uint) error {
 // ============ BangumiParse 关联方法 ============
 
 // CreateBangumiParse 创建番剧解析器
-func (db *DB) CreateBangumiParse(parser *model.EpisodeMetadata) error {
-	return db.Save(parser).Error
+func (db *DB) CreateBangumiParse(ctx context.Context, parser *model.EpisodeMetadata) error {
+	return db.WithContext(ctx).Save(parser).Error
 }
 
-func (db *DB) GetBangumiParseByTitle(torrentName string) (*model.Bangumi, error) {
+func (db *DB) GetBangumiParseByTitle(ctx context.Context, torrentName string) (*model.Bangumi, error) {
 	// 要求 Title 和 Group 都在 torrentName 中出现
 	// title 和 group 是 torrentName 的子串
 	var metaData model.EpisodeMetadata
-	err := db.Where("instr(?, title) > 0 AND instr(?, `group`) > 0", torrentName, torrentName).First(&metaData).Error
+	err := db.WithContext(ctx).Where("instr(?, title) > 0 AND instr(?, `group`) > 0", torrentName, torrentName).First(&metaData).Error
 	if err != nil {
 		return nil, err
 	}
 	// 通过 id 获取 对应的bangumi
 	var bangumi model.Bangumi
-	err = db.First(&bangumi, metaData.BangumiID).Error
+	err = db.WithContext(ctx).First(&bangumi, metaData.BangumiID).Error
 	if err != nil {
 		return nil, err
 	}
@@ -372,9 +288,9 @@ func (db *DB) GetBangumiParseByTitle(torrentName string) (*model.Bangumi, error)
 }
 
 // GetBangumiParseByID 根据 ID 获取番剧解析器
-func (db *DB) GetBangumiParseByID(id uint) (*model.EpisodeMetadata, error) {
+func (db *DB) GetBangumiParseByID(ctx context.Context, id uint) (*model.EpisodeMetadata, error) {
 	var parser model.EpisodeMetadata
-	err := db.First(&parser, id).Error
+	err := db.WithContext(ctx).First(&parser, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -382,18 +298,18 @@ func (db *DB) GetBangumiParseByID(id uint) (*model.EpisodeMetadata, error) {
 }
 
 // GetBangumisByParseID 根据 ParseID 查找所有关联的 Bangumi
-func (db *DB) GetBangumisByParseID(parserID uint) ([]*model.Bangumi, error) {
+func (db *DB) GetBangumisByParseID(ctx context.Context, parserID uint) ([]*model.Bangumi, error) {
 	var bangumis []*model.Bangumi
-	err := db.Joins("JOIN bangumi_parser_mappings ON bangumi.id = bangumi_parser_mappings.bangumi_id").
+	err := db.WithContext(ctx).Joins("JOIN bangumi_parser_mappings ON bangumi.id = bangumi_parser_mappings.bangumi_id").
 		Where("bangumi_parser_mappings.bangumi_parser_id = ?", parserID).
 		Find(&bangumis).Error
 	return bangumis, err
 }
 
 // GetParsesByBangumiID 根据 BangumiID 查找所有关联的 Parse
-func (db *DB) GetParsesByBangumiID(bangumiID uint) ([]*model.EpisodeMetadata, error) {
+func (db *DB) GetParsesByBangumiID(ctx context.Context, bangumiID uint) ([]*model.EpisodeMetadata, error) {
 	var parsers []*model.EpisodeMetadata
-	err := db.Joins("JOIN bangumi_parser_mappings ON bangumi_parser.id = bangumi_parser_mappings.bangumi_parser_id").
+	err := db.WithContext(ctx).Joins("JOIN bangumi_parser_mappings ON bangumi_parser.id = bangumi_parser_mappings.bangumi_parser_id").
 		Where("bangumi_parser_mappings.bangumi_id = ?", bangumiID).
 		Find(&parsers).Error
 	return parsers, err
@@ -402,9 +318,9 @@ func (db *DB) GetParsesByBangumiID(bangumiID uint) ([]*model.EpisodeMetadata, er
 // ============ Bangumi 复合查询方法 ============
 
 // GetBangumiWithDetails 获取 Bangumi 及其关联的 TMDB、Mikan、Parse 信息
-func (db *DB) GetBangumiWithDetails(id uint) (*model.Bangumi, error) {
+func (db *DB) GetBangumiWithDetails(ctx context.Context, id uint) (*model.Bangumi, error) {
 	var bangumi model.Bangumi
-	err := db.Preload("TmdbItem").
+	err := db.WithContext(ctx).Preload("TmdbItem").
 		Preload("MikanItem").
 		Preload("EpisodeMetadata").
 		First(&bangumi, id).Error
@@ -415,9 +331,9 @@ func (db *DB) GetBangumiWithDetails(id uint) (*model.Bangumi, error) {
 }
 
 // ListBangumiWithDetails 获取所有 Bangumi 及其关联信息
-func (db *DB) ListBangumiWithDetails() ([]*model.Bangumi, error) {
+func (db *DB) ListBangumiWithDetails(ctx context.Context) ([]*model.Bangumi, error) {
 	var bangumis []*model.Bangumi
-	err := db.Preload("TmdbItem").
+	err := db.WithContext(ctx).Preload("TmdbItem").
 		Preload("MikanItem").
 		Preload("EpisodeMetadata").
 		Find(&bangumis).Error
@@ -427,65 +343,65 @@ func (db *DB) ListBangumiWithDetails() ([]*model.Bangumi, error) {
 // ============ Bangumi 和 BangumiParse 多对多关联方法 ============
 
 // AddParsesToBangumi 为 Bangumi 添加多个 Parse（一对多关系）
-func (db *DB) AddParsesToBangumi(bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) AddParsesToBangumi(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
 	var bangumi model.Bangumi
-	if err := db.First(&bangumi, bangumiID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
 	}
-	return db.Model(&bangumi).Association("EpisodeMetadata").Append(parsers)
+	return db.WithContext(ctx).Model(&bangumi).Association("EpisodeMetadata").Append(parsers)
 }
 
 // ReplaceParsesToBangumi 替换 Bangumi 的所有 Parse（一对多关系）
-func (db *DB) ReplaceParsesToBangumi(bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) ReplaceParsesToBangumi(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
 	var bangumi model.Bangumi
-	if err := db.First(&bangumi, bangumiID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
 	}
-	return db.Model(&bangumi).Association("EpisodeMetadata").Replace(parsers)
+	return db.WithContext(ctx).Model(&bangumi).Association("EpisodeMetadata").Replace(parsers)
 }
 
 // RemoveParsesFromBangumi 从 Bangumi 中移除指定的 Parse（一对多关系）
-func (db *DB) RemoveParsesFromBangumi(bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) RemoveParsesFromBangumi(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
 	var bangumi model.Bangumi
-	if err := db.First(&bangumi, bangumiID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
 	}
-	return db.Model(&bangumi).Association("EpisodeMetadata").Delete(parsers)
+	return db.WithContext(ctx).Model(&bangumi).Association("EpisodeMetadata").Delete(parsers)
 }
 
 // ClearParsesFromBangumi 清空 Bangumi 的所有 Parse（一对多关系）
-func (db *DB) ClearParsesFromBangumi(bangumiID int) error {
+func (db *DB) ClearParsesFromBangumi(ctx context.Context, bangumiID int) error {
 	var bangumi model.Bangumi
-	if err := db.First(&bangumi, bangumiID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
 	}
-	return db.Model(&bangumi).Association("EpisodeMetadata").Clear()
+	return db.WithContext(ctx).Model(&bangumi).Association("EpisodeMetadata").Clear()
 }
 
 // CountParsesOfBangumi 统计 Bangumi 关联的 Parse 数量
-func (db *DB) CountParsesOfBangumi(bangumiID int) (int64, error) {
+func (db *DB) CountParsesOfBangumi(ctx context.Context, bangumiID int) (int64, error) {
 	var bangumi model.Bangumi
-	if err := db.First(&bangumi, bangumiID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return 0, err
 	}
-	return db.Model(&bangumi).Association("EpisodeMetadata").Count(), nil
+	return db.WithContext(ctx).Model(&bangumi).Association("EpisodeMetadata").Count(), nil
 }
 
 // AddBangumiToParse 为 Parse 添加 Bangumi（多对多关系反向操作）
-func (db *DB) AddBangumiToParse(parserID int, bangumis []*model.Bangumi) error {
+func (db *DB) AddBangumiToParse(ctx context.Context, parserID int, bangumis []*model.Bangumi) error {
 	var parser model.EpisodeMetadata
-	if err := db.First(&parser, parserID).Error; err != nil {
+	if err := db.WithContext(ctx).First(&parser, parserID).Error; err != nil {
 		return err
 	}
-	return db.Model(&parser).Association("Bangumis").Append(bangumis)
+	return db.WithContext(ctx).Model(&parser).Association("Bangumis").Append(bangumis)
 }
 
 // ============ Torrent 关联查询优化方法 ============
 
 // GetTorrentWithDetails 获取 Torrent 及其关联的 Bangumi 和 Parse 信息
-func (db *DB) GetTorrentWithDetails(url string) (*model.Torrent, error) {
+func (db *DB) GetTorrentWithDetails(ctx context.Context, url string) (*model.Torrent, error) {
 	var torrent model.Torrent
-	err := db.Preload("Bangumi").
+	err := db.WithContext(ctx).Preload("Bangumi").
 		Preload("BangumiParse").
 		Where("url = ?", url).
 		First(&torrent).Error
@@ -496,9 +412,9 @@ func (db *DB) GetTorrentWithDetails(url string) (*model.Torrent, error) {
 }
 
 // ListTorrentWithDetails 获取所有 Torrent 及其关联信息
-func (db *DB) ListTorrentWithDetails() ([]*model.Torrent, error) {
+func (db *DB) ListTorrentWithDetails(ctx context.Context) ([]*model.Torrent, error) {
 	var torrents []*model.Torrent
-	err := db.Preload("Bangumi").
+	err := db.WithContext(ctx).Preload("Bangumi").
 		Preload("BangumiParse").
 		Find(&torrents).Error
 	return torrents, err
