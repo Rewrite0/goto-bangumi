@@ -9,23 +9,12 @@ package model
 
 // ProxyConfig represents proxy configuration
 type ProxyConfig struct {
-	Enable   bool   `json:"enable" mapstructure:"enable"`
-	Type     string `json:"type" mapstructure:"type" validate:"oneof=http https socks5"` // http, https (socks5 not supported yet)
-	Host     string `json:"host" mapstructure:"host"`
-	Port     int    `json:"port" mapstructure:"port" validate:"gte=0,lte=65535"`
-	Username string `json:"username" mapstructure:"username"`
-	Password string `json:"password" mapstructure:"password"`
-}
-
-func NewProxyConfig() *ProxyConfig {
-	return &ProxyConfig{
-		Enable:   false,
-		Type:     "http",
-		Host:     "",
-		Port:     0,
-		Username: "",
-		Password: "",
-	}
+	Enable   bool   `yaml:"enable" env:"ENABLE" env-default:"false"`
+	Type     string `yaml:"type" env:"TYPE" env-default:"http"`
+	Host     string `yaml:"host" env:"HOST"`
+	Port     int    `yaml:"port" env:"PORT" env-default:"0"`
+	Username string `yaml:"username" env:"USERNAME"`
+	Password string `yaml:"password" env:"PASSWORD"`
 }
 
 // RSSXml represents RSS feed starting from channel level
