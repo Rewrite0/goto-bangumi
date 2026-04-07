@@ -12,6 +12,7 @@ import (
 // mockTorrent 模拟种子的内部状态
 type mockTorrent struct {
 	hash       string
+	name       string
 	info       *model.TorrentDownloadInfo
 	files      []string
 	queryCount int
@@ -39,6 +40,8 @@ func NewMockDownloader() *MockDownloader {
 
 // Init 初始化下载器，加载预置数据
 func (d *MockDownloader) Init(config *model.DownloaderConfig) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.config = config
 	d.torrents = make(map[string]*mockTorrent)
 
@@ -47,6 +50,7 @@ func (d *MockDownloader) Init(config *model.DownloaderConfig) error {
 		files := MockFiles[hash]
 		d.torrents[hash] = &mockTorrent{
 			hash: hash,
+			name: hash,
 			info: &model.TorrentDownloadInfo{
 				ETA:       info.ETA,
 				SavePath:  info.SavePath,
@@ -81,6 +85,7 @@ func (d *MockDownloader) Add(ctx context.Context, torrentInfo *model.TorrentInfo
 	defer d.mu.Unlock()
 
 	mt := &mockTorrent{
+		name: torrentInfo.Name,
 		info: &model.TorrentDownloadInfo{
 			ETA:       300,
 			SavePath:  savePath,
@@ -115,7 +120,14 @@ func (d *MockDownloader) Delete(ctx context.Context, hashes []string) (bool, err
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, h := range hashes {
-		delete(d.torrents, h)
+		// 找到要删除的 torrent，同时清理所有指向同一对象的 key
+		if mt, ok := d.torrents[h]; ok {
+			for k, v := range d.torrents {
+				if v == mt {
+					delete(d.torrents, k)
+				}
+			}
+		}
 	}
 	return true, nil
 }
@@ -189,7 +201,7 @@ func (d *MockDownloader) TorrentsInfo(ctx context.Context, statusFilter, categor
 
 		result = append(result, map[string]any{
 			"hash":      hash,
-			"name":      mt.hash,
+			"name":      mt.name,
 			"category":  mt.category,
 			"tags":      mt.tags,
 			"save_path": mt.info.SavePath,

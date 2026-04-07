@@ -229,6 +229,30 @@ func TestMockDownloader_TorrentsInfo(t *testing.T) {
 	}
 }
 
+func TestMockDownloader_DeleteAliased(t *testing.T) {
+	d := newTestMock(t)
+	ctx := context.Background()
+
+	torrentInfo := &model.TorrentInfo{
+		Name:       "Aliased Delete Test",
+		InfoHashV1: "v1hash11112222333344445555666677778888aaaa",
+		InfoHashV2: "v2hash99998888777766665555444433332222111100001111",
+	}
+	hashes, _ := d.Add(ctx, torrentInfo, "/downloads/test")
+	if len(hashes) != 2 {
+		t.Fatalf("expected 2 hashes, got %d", len(hashes))
+	}
+
+	// Delete by v1 hash only
+	d.Delete(ctx, []string{hashes[0]})
+
+	// v2 hash should also be gone
+	_, err := d.CheckHash(ctx, hashes[1])
+	if err == nil {
+		t.Fatal("v2 hash should be deleted when v1 is deleted")
+	}
+}
+
 func TestMockDownloader_AuthLogoutInterval(t *testing.T) {
 	d := newTestMock(t)
 	ctx := context.Background()
