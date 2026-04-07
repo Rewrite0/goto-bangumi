@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/refresh"
@@ -20,9 +19,7 @@ type RSSRefreshTask struct {
 }
 
 // NewRSSRefreshTask 创建 RSS 刷新任务
-func NewRSSRefreshTask() *RSSRefreshTask {
-	// 从配置中读取 RSS 刷新间隔
-	programConfig := conf.GetConfigOrDefault("program", model.NewProgramConfig())
+func NewRSSRefreshTask(programConfig model.ProgramConfig) *RSSRefreshTask {
 	interval := programConfig.RssTime
 
 	task := &RSSRefreshTask{

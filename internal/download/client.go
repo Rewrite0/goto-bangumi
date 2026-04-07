@@ -12,7 +12,6 @@ import (
 	"golang.org/x/time/rate"
 
 	"goto-bangumi/internal/apperrors"
-	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/download/downloader"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
@@ -250,12 +249,3 @@ func (c *DownloadClient) TorrentsInfo(ctx context.Context, statusFilter, categor
 	return c.Downloader.TorrentsInfo(ctx, statusFilter, category, tag, limit)
 }
 
-func (c *DownloadClient) GetConfig() *model.DownloaderConfig {
-	return conf.GetConfigOrDefault("downloader", model.NewDownloaderConfig())
-}
-
-func InitModule() {
-	c := conf.GetConfigOrDefault("downloader", model.NewDownloaderConfig())
-	Client.Init(c)
-	slog.Debug("[download] 下载客户端初始化完成", "类型", c.Type, "保存路径", c.SavePath)
-}

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"goto-bangumi/internal/apperrors"
-	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/utils"
 
@@ -32,7 +31,7 @@ func init() {
 	// 初始化全局缓存管理器（500 个缓存项，60 秒 TTL）
 	globalCache = NewMemoryCacheManager(500, 60*time.Second)
 	// 初始化默认代理配置为空
-	defaultProxyConfig = model.NewProxyConfig()
+	defaultProxyConfig = &model.ProxyConfig{}
 	defaultClient = newRequestClient()
 }
 
@@ -43,10 +42,6 @@ func Init(config *model.ProxyConfig) {
 		slog.Info("[Network] Network package initialized", "proxy_enabled", config.Enable)
 		defaultClient = newRequestClient()
 	}
-}
-
-func GetConfig() *model.ProxyConfig {
-	return conf.GetConfigOrDefault("proxy", model.NewProxyConfig())
 }
 
 // GetRequestClient 返回全局共享的 RequestClient 实例

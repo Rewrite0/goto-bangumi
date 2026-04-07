@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 
-	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
 )
@@ -61,8 +60,3 @@ func (c *Client) Send(ctx context.Context, message *model.Message) {
 	slog.Debug("[Notification] Sending notification", "title", message.Title, "episode", message.Episode)
 }
 
-func InitModule() {
-	c :=conf.GetConfigOrDefault("notification", model.NewNotificationConfig())
-	NotificationClient.Init(c)
-
-}

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"goto-bangumi/internal/conf"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/notification"
@@ -23,7 +22,7 @@ import (
 // 如果重命名失败,则返回错误
 // 如果成功, 则把把数据库内 torrent 的 状态更新为已重命名
 
-var renameConfig = model.NewBangumiRenameConfig()
+var renameConfig = &model.BangumiRenameConfig{}
 
 func Init(cfg *model.BangumiRenameConfig) {
 	renameConfig = cfg
@@ -80,8 +79,3 @@ func Rename(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi)
 	}
 }
 
-func InitModule() {
-	c := conf.GetConfigOrDefault("rename", model.NewBangumiRenameConfig())
-	Init(c)
-	slog.Debug("[rename] 重命名模块初始化完成", "配置", c)
-}
