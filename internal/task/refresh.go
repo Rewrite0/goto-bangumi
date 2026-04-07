@@ -53,7 +53,7 @@ func (t *RSSRefreshTask) Enable() bool {
 func (t *RSSRefreshTask) Run(ctx context.Context) error {
 	db := database.GetDB()
 	// 获取所有启用的 RSS 源
-	rssList, err := db.ListActiveRSS()
+	rssList, err := db.ListActiveRSS(ctx)
 	if err != nil {
 		return fmt.Errorf("[RSS task] 获取 RSS 列表失败: %w", err)
 	}

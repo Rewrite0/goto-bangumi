@@ -12,60 +12,38 @@ import (
 	"goto-bangumi/internal/taskrunner"
 )
 
-// CheckHandler 检查下载是否成功添加到下载器
-type CheckHandler struct{}
+// NewCheckHandler 创建检查处理器，验证下载是否成功添加到下载器
+func NewCheckHandler() taskrunner.PhaseFunc {
+	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
+		for _, guid := range task.Guids {
+			trueID, err := download.Client.Check(ctx, guid)
 
-func (h *CheckHandler) Handle(ctx context.Context, task *model.Task) taskrunner.HandlerResult {
-	for _, guid := range task.Guids {
-		trueID, err := download.Client.Check(ctx, guid)
-
-		// 如果表明没有找到，尝试下一个 guid
-		if apperrors.IsKeyError(err) {
-			continue
-		}
-
-		// 如果是登录错误，直接失败不重试
-		if apperrors.IsDownloadLoginError(err) {
-			slog.Error("[check handler] 检查下载失败，登录错误", "error", err)
-			return taskrunner.HandlerResult{
-				Error:       err,
-				ShouldRetry: false,
+			// GUID 没找到，试下一个
+			if apperrors.IsKeyError(err) {
+				continue
 			}
-		}
 
-		// 其他错误，可重试
-		if err != nil {
-			slog.Error("[check handler] 检查下载失败", "error", err)
-			return taskrunner.HandlerResult{
-				Error:       err,
-				ShouldRetry: true,
+			if err != nil {
+				slog.Error("[check handler] 检查下载失败", "error", err)
+				return taskrunner.PhaseResult{Err: err}
 			}
-		}
 
-		// 找到了真实 ID
-		if trueID != "" {
-			task.Torrent.DownloadUID = trueID
+			// 找到了真实 ID
+			if trueID != "" {
+				task.Torrent.DownloadUID = trueID
 
-			// 存入数据库
-			if err := database.GetDB().AddTorrentDUID(ctx,task.Torrent.Link, trueID); err != nil {
-				slog.Error("[check handler] 更新 Torrent DUID 失败", "error", err)
-				return taskrunner.HandlerResult{
-					Error:       err,
-					ShouldRetry: true,
+				if err := database.GetDB().AddTorrentDUID(ctx, task.Torrent.Link, trueID); err != nil {
+					slog.Error("[check handler] 更新 Torrent DUID 失败", "error", err)
+					return taskrunner.PhaseResult{Err: err}
 				}
-			}
 
-			slog.Debug("[check handler] 获取到真实 DUID", "torrent", task.Torrent.Name, "duid", trueID)
+				slog.Debug("[check handler] 获取到真实 DUID",
+					"torrent", task.Torrent.Name, "duid", trueID)
 
-			return taskrunner.HandlerResult{
-				NextPhase: model.PhaseDownloading,
+				return taskrunner.PhaseResult{} // 成功
 			}
 		}
-	}
 
-	// 所有 guid 都没找到，重试
-	return taskrunner.HandlerResult{
-		Error:       errors.New("no valid hash found"),
-		ShouldRetry: true,
+		return taskrunner.PhaseResult{Err: errors.New("no valid hash found")}
 	}
 }

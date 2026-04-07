@@ -3,58 +3,64 @@ package taskrunner
 import (
 	"context"
 	"log/slog"
-	"sort"
 	"sync"
 	"time"
 
 	"goto-bangumi/internal/model"
 )
 
-// 要实现的任务有
-// 1. task 的阶段转换
-// 2. 每个阶段的处理器注册和执行
-// 3. 任务完成/失败的处理
-// 4. 任务的单独取消
-
-// TaskRunner 任务执行器
-type TaskRunner struct {
-	store        *TaskStore
-	handlers     map[model.TaskPhase][]handlerEntry
-	pollInterval time.Duration
-
-	wg sync.WaitGroup
+// phaseEntry 阶段配置
+type phaseEntry struct {
+	phase      model.TaskPhase
+	handler    PhaseFunc
+	needsLimit bool // true = 需要获取 downloadSem
 }
 
 // Config TaskRunner 配置
 type Config struct {
-	PollInterval time.Duration
+	MaxDownloadConcurrency int // download-bound 阶段最大并发数
+	QueueSize              int // 队列容量
 }
 
 // DefaultConfig 默认配置
 func DefaultConfig() Config {
 	return Config{
-		PollInterval: 5 * time.Second,
+		MaxDownloadConcurrency: 4,
+		QueueSize:              64,
 	}
 }
 
-// NewTaskRunner 创建任务执行器
-func NewTaskRunner(config Config) *TaskRunner {
+// TaskRunner 任务执行器
+type TaskRunner struct {
+	store       *TaskStore
+	phases      []phaseEntry
+	queue       chan *model.Task
+	downloadSem chan struct{}
+	wg          sync.WaitGroup
+	cancel      context.CancelFunc
+}
+
+// New 创建任务执行器
+func New(config Config) *TaskRunner {
+	if config.MaxDownloadConcurrency <= 0 {
+		config.MaxDownloadConcurrency = 4
+	}
+	if config.QueueSize <= 0 {
+		config.QueueSize = 64
+	}
 	return &TaskRunner{
-		store:        NewTaskStore(),
-		handlers:     make(map[model.TaskPhase][]handlerEntry),
-		pollInterval: config.PollInterval,
+		store:       NewTaskStore(),
+		queue:       make(chan *model.Task, config.QueueSize),
+		downloadSem: make(chan struct{}, config.MaxDownloadConcurrency),
 	}
 }
 
 // Register 注册阶段处理器
-func (r *TaskRunner) Register(phase model.TaskPhase, priority int, handler PhaseHandler) {
-	r.handlers[phase] = append(r.handlers[phase], handlerEntry{
-		priority: priority,
-		handler:  handler,
-	})
-	// 按优先级排序
-	sort.Slice(r.handlers[phase], func(i, j int) bool {
-		return r.handlers[phase][i].priority < r.handlers[phase][j].priority
+func (r *TaskRunner) Register(phase model.TaskPhase, handler PhaseFunc, needsLimit bool) {
+	r.phases = append(r.phases, phaseEntry{
+		phase:      phase,
+		handler:    handler,
+		needsLimit: needsLimit,
 	})
 }
 
@@ -63,98 +69,148 @@ func (r *TaskRunner) Store() *TaskStore {
 	return r.store
 }
 
-func (r *TaskRunner) Add(ctx context.Context, task *model.Task) bool {
-	if added := r.store.Add(task); added {
-		go r.executeTask(ctx, task)
+// Start 启动 dispatcher
+func (r *TaskRunner) Start(ctx context.Context) {
+	ctx, r.cancel = context.WithCancel(ctx)
+	r.wg.Add(1)
+	go r.dispatcher(ctx)
+}
+
+// Stop 优雅关闭
+func (r *TaskRunner) Stop() {
+	r.cancel()
+	r.wg.Wait()
+}
+
+// Submit 提交任务
+func (r *TaskRunner) Submit(task *model.Task) bool {
+	if !r.store.Add(task) {
+		return false // 重复任务
+	}
+	select {
+	case r.queue <- task:
 		return true
+	default:
+		r.store.Remove(task.Torrent.Link)
+		return false // 队列满
 	}
-	return false
 }
 
-// executeTask 执行单个任务
-func (r *TaskRunner) executeTask(ctx context.Context, task *model.Task) {
-	ctx, cancel := context.WithCancel(ctx)
-	task.Cancel = cancel
-	// 每次执行都只是简单的把当前阶段的处理器跑一遍
-	// 然后下一次再跑一次
-	// 每次都会把 HandlerIndex ++, 以便下次从下一个处理器开始
-	// 如果本身把 HandlerIndex-- 了, 那么就会重复跑这个处理器
-	// 对于跑的结果, 如果返回了 NextPhase, 那么就直接跳到下一个阶段, 跳过剩下的处理器
-	// 对于失败要分情况, 有的错误可接受, 这时候就继续跑下一个处理器
-	// 有的错误不可接受, 这时候就直接把任务标记为失败
-	// 目前每个阶段有这么几个处理器:
-	// PhaseChecking:
-	//   1. 检查下载是否成功添加 (不可接受错误)
-	// PhaseDownloading:
-	//   1. 检查下载状态 (可接受错误, 比如还在下载中)
-	// PhaseRenaming:
-	//   1. 重命名文件 (不可接受错误)
-	// Complete:
-	//   1. 用以通知
+// Cancel 取消任务
+func (r *TaskRunner) Cancel(link string) {
+	r.store.Remove(link)
+}
+
+// dispatcher 从队列取任务，为每个任务启动 goroutine
+func (r *TaskRunner) dispatcher(ctx context.Context) {
+	defer r.wg.Done()
 	for {
-		handlers := r.handlers[task.Phase]
-		// 如果当前阶段没有处理器或到了最后一个 Handler，直接前往下一个阶段
-		if task.HandlerIndex >= len(handlers) {
-			// nextPhase 返回 false, 表明到了终态，结束任务
-			if res := r.nextPhase(task); !res {
-				return
+		select {
+		case <-ctx.Done():
+			return
+		case task := <-r.queue:
+			// 检查任务是否已被取消（从 store 移除）
+			if r.store.Get(task.Torrent.Link) == nil {
+				continue
 			}
-			continue
+			r.wg.Add(1)
+			go func() {
+				defer r.wg.Done()
+				r.process(ctx, task)
+			}()
 		}
-		entry := handlers[task.HandlerIndex]
-		result := entry.handler.Handle(ctx, task)
-		r.applyResult(task, result)
 	}
 }
 
-// applyResult 应用执行结果
-func (r *TaskRunner) applyResult(task *model.Task, result HandlerResult) {
-	//TODO: 错误分为可接受和不可接受两种
-	// 如果是可接受错误, 那么就继续执行下一个处理器
-	// 如果是不可接受错误, 那么就把任务标记为失败
-	if result.Error != nil {
-		task.ErrorMsg = result.Error.Error()
-		task.Advance(model.PhaseFailed)
-		slog.Error("[task runner] 任务失败",
-			"torrent", task.Torrent.Name,
-			"phase", task.Phase,
-			"error", result.Error)
+// process 处理单个任务的当前阶段
+func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
+	entry := r.entryFor(task.Phase)
+	if entry == nil {
+		// 没有 handler 的阶段（如 PhaseCompleted），直接推进
+		r.advance(ctx, task)
 		return
 	}
-	// 更新阶段
-	if result.NextPhase != 0 {
-		task.Advance(result.NextPhase)
-	}
-	task.HandlerIndex++
-}
 
-// nextPhase 前往下一个阶段
-func (r *TaskRunner) nextPhase(task *model.Task) bool {
-	oldPhase := task.Phase
-	task.Advance()
-	if task.Phase.IsTerminal() {
-		// 将任务删除
-		task.Cancel()
+	// Download-bound 阶段需要获取信号量
+	if entry.needsLimit {
+		select {
+		case r.downloadSem <- struct{}{}:
+			defer func() { <-r.downloadSem }()
+		case <-ctx.Done():
+			return
+		}
+	}
+
+	result := entry.handler(ctx, task)
+
+	if result.Err != nil {
+		task.Mu.Lock()
+		task.Phase = model.PhaseFailed
+		task.ErrorMsg = result.Err.Error()
+		task.Mu.Unlock()
 		r.store.Remove(task.Torrent.Link)
-		slog.Info("[task runner] 任务完成",
+		slog.Error("[taskrunner] 任务失败",
 			"torrent", task.Torrent.Name,
-			"final_phase", task.Phase)
-		return false
-	} else {
-		slog.Debug("[task runner] 阶段变更",
-			"torrent", task.Torrent.Name,
-			"from", oldPhase,
-			"to", task.Phase)
+			"phase", task.Phase,
+			"error", result.Err)
+		return
 	}
-	return true
+
+	if result.PollAfter > 0 {
+		// 延迟重入队列，goroutine 立即结束
+		time.AfterFunc(result.PollAfter, func() {
+			select {
+			case r.queue <- task:
+			case <-ctx.Done():
+			}
+		})
+		return
+	}
+
+	// 成功，推进到下一阶段
+	r.advance(ctx, task)
 }
 
-func (r *TaskRunner) Cancel(link string) {
-	// 调用的时候无法保证任务有cancel
-	// 所以应该把 Task设为 End 状态
-	task := r.store.Get(link)
-	task.Advance(model.PhaseEnd)
-	if task.Cancel != nil {
-		task.Cancel()
+// advance 推进到下一阶段
+func (r *TaskRunner) advance(ctx context.Context, task *model.Task) {
+	task.Mu.Lock()
+	oldPhase := task.Phase
+	nextPhase := r.nextPhase(task.Phase)
+	task.Phase = nextPhase
+	task.Mu.Unlock()
+
+	if nextPhase == model.PhaseEnd {
+		r.store.Remove(task.Torrent.Link)
+		slog.Info("[taskrunner] 任务完成", "torrent", task.Torrent.Name)
+		return
 	}
+
+	slog.Debug("[taskrunner] 阶段变更",
+		"torrent", task.Torrent.Name,
+		"from", oldPhase,
+		"to", nextPhase)
+
+	// 立即入队处理下一阶段
+	select {
+	case r.queue <- task:
+	case <-ctx.Done():
+	}
+}
+
+// entryFor 查找阶段对应的配置
+func (r *TaskRunner) entryFor(phase model.TaskPhase) *phaseEntry {
+	for i := range r.phases {
+		if r.phases[i].phase == phase {
+			return &r.phases[i]
+		}
+	}
+	return nil
+}
+
+// nextPhase 返回下一个阶段
+func (r *TaskRunner) nextPhase(current model.TaskPhase) model.TaskPhase {
+	if current == model.PhaseCompleted {
+		return model.PhaseEnd
+	}
+	return current + 1
 }

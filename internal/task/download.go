@@ -8,22 +8,23 @@ import (
 	"time"
 
 	"goto-bangumi/internal/download"
-	"goto-bangumi/internal/eventbus"
 	"goto-bangumi/internal/model"
+	"goto-bangumi/internal/taskrunner"
 )
 
 // DownloadTask 下载任务
 type DownloadTask struct {
 	interval time.Duration
 	enabled  bool
-	eventbus eventbus.EventBus
+	runner   *taskrunner.TaskRunner
 }
 
 // NewDownloadTask 创建下载任务
-func NewDownloadTask() *DownloadTask {
+func NewDownloadTask(runner *taskrunner.TaskRunner) *DownloadTask {
 	return &DownloadTask{
 		interval: 5 * time.Second,
 		enabled:  true,
+		runner:   runner,
 	}
 }
 
@@ -51,19 +52,19 @@ func (t *DownloadTask) Run(ctx context.Context) error {
 		download.DQueue.InQueue.Delete(torrent.Link)
 
 		slog.Debug("[download task] 开始下载种子", "Name", torrent.Name)
-		guid, err := download.Client.Add(ctx, torrent.Link, genSavePath(bangumi))
+		guids, err := download.Client.Add(ctx, torrent.Link, genSavePath(bangumi))
 		if err != nil {
 			slog.Error("[download task] 下载种子失败", "Name", torrent.Name, "error", err)
 			// 重新加入队列，稍后重试
 			download.DQueue.Add(ctx, torrent, bangumi)
+			return nil
 		}
-		slog.Debug("[download task]下载种子成功", "Name", torrent.Name, "GUID", guid)
-		// 发布DownloadCheck事件
-		event := model.DownloadCheckEvent{
-			Bangumi: bangumi,
-			Torrent: torrent,
-		}
-		t.eventbus.Publish(ctx, event)
+		slog.Debug("[download task] 下载种子成功", "Name", torrent.Name, "GUIDs", guids)
+
+		// 创建任务提交到 taskrunner
+		task := model.NewTask(torrent, bangumi)
+		task.Guids = guids
+		t.runner.Submit(task)
 	default:
 		// 队列为空，跳过
 	}

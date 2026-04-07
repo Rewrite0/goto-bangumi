@@ -10,29 +10,22 @@ import (
 	"goto-bangumi/internal/taskrunner"
 )
 
-// RenameHandler 重命名处理器
-type RenameHandler struct{}
+// NewRenameHandler 创建重命名处理器
+func NewRenameHandler() taskrunner.PhaseFunc {
+	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
+		slog.Info("[rename handler] 开始重命名",
+			"torrent", task.Torrent.Name,
+			"bangumi", task.Bangumi.OfficialTitle)
 
-func (h *RenameHandler) Handle(ctx context.Context, task *model.Task) taskrunner.HandlerResult {
-	slog.Info("[rename handler] 开始重命名",
-		"torrent", task.Torrent.Name,
-		"bangumi", task.Bangumi.OfficialTitle)
+		rename.Rename(ctx, task.Torrent, task.Bangumi)
 
-	// 调用 rename 模块进行重命名
-	rename.Rename(ctx, task.Torrent, task.Bangumi)
-
-	// 更新数据库状态为已重命名
-	if err := database.GetDB().TorrentRenamed(task.Torrent.Link); err != nil {
-		slog.Error("[rename handler] 更新种子重命名状态失败", "error", err, "link", task.Torrent.Link)
-		return taskrunner.HandlerResult{
-			Error:       err,
-			ShouldRetry: true,
+		if err := database.GetDB().TorrentRenamed(ctx, task.Torrent.Link); err != nil {
+			slog.Error("[rename handler] 更新种子重命名状态失败",
+				"error", err, "link", task.Torrent.Link)
+			return taskrunner.PhaseResult{Err: err}
 		}
-	}
 
-	slog.Info("[rename handler] 重命名完成", "torrent", task.Torrent.Name)
-
-	return taskrunner.HandlerResult{
-		NextPhase: model.PhaseCompleted,
+		slog.Info("[rename handler] 重命名完成", "torrent", task.Torrent.Name)
+		return taskrunner.PhaseResult{} // 成功
 	}
 }

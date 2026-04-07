@@ -67,6 +67,10 @@ func (e *DownloadLoginError) Unwrap() error {
 	return e.Err
 }
 
+func NewDownloadLoginError(err error) *DownloadLoginError {
+	return &DownloadLoginError{Err: err}
+}
+
 func IsDownloadLoginError(err error) bool {
 	var loginErr *DownloadLoginError
 	return errors.As(err, &loginErr)

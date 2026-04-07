@@ -16,6 +16,8 @@ import (
 	"goto-bangumi/internal/rename"
 	"goto-bangumi/internal/scheduler"
 	"goto-bangumi/internal/task"
+	"goto-bangumi/internal/taskrunner"
+	"goto-bangumi/internal/taskrunner/handlers"
 )
 
 // 先实现一下整体的初使化
@@ -73,9 +75,16 @@ func InitProgram(ctx context.Context) {
 func (p *Program) Start(ctx context.Context) {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 	go download.Client.Login(p.ctx)
+
+	// 创建并启动 taskrunner
+	runner := taskrunner.New(taskrunner.DefaultConfig())
+	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(), true)
+	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(), true)
+	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(), false)
+	runner.Start(p.ctx)
+
 	// 启动调度器
-	InitScheduler(p.ctx)
-	// 注册事件监听器
+	InitScheduler(p.ctx, runner)
 }
 
 func (p *Program) Stop() {
@@ -84,9 +93,7 @@ func (p *Program) Stop() {
 }
 
 // InitScheduler 初始化并启动调度器
-// ctx: 上下文，用于控制调度器的生命周期
-func InitScheduler(ctx context.Context) {
-	// 初始化调度器
+func InitScheduler(ctx context.Context, runner *taskrunner.TaskRunner) {
 	scheduler.InitScheduler(ctx)
 
 	s := scheduler.GetScheduler()
@@ -95,11 +102,9 @@ func InitScheduler(ctx context.Context) {
 		return
 	}
 
-	// 添加 RSS 刷新任务
 	s.AddTask(task.NewRSSRefreshTask())
-	s.AddTask(task.NewDownloadTask())
+	s.AddTask(task.NewDownloadTask(runner))
 
-	// 启动调度器
 	s.Start()
 
 	slog.Info("调度器启动成功")

@@ -24,7 +24,7 @@ func (rs *renameService) handleRename(ctx context.Context, data model.RenameEven
 
 	// 更新数据库状态为已重命名
 	db := database.GetDB()
-	if err := db.TorrentRenamed(data.Torrent.Link); err != nil {
+	if err := db.TorrentRenamed(ctx, data.Torrent.Link); err != nil {
 		slog.Error("[rename service] 更新种子重命名状态失败", "error", err, "link", data.Torrent.Link)
 		return
 	}
