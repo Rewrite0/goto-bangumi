@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"goto-bangumi/internal/conf"
@@ -29,47 +28,29 @@ type Program struct {
 }
 
 func InitProgram(ctx context.Context) {
-	// database
-	// 开始 event bus
-	conf.Init()
-	err := conf.LoadConfig()
-	// LoadConfig()
-	if err != nil {
-		slog.Error("[program]加载配置文件失败", "error", err)
+	// Load config
+	if err := conf.Init(); err != nil {
+		slog.Error("[program] 加载配置文件失败", "error", err)
 		panic(err)
 	}
 
-	// 获取程序配置并初始化日志
-	programConfig := conf.GetConfigOrDefault("program", model.NewProgramConfig())
-	logger.Init(programConfig.DebugEnable)
-	// 初始化数据库
+	cfg := conf.Get()
+
+	// Initialize logger
+	logger.Init(cfg.Program.DebugEnable)
+
+	// Initialize database
 	if err := database.InitDB(nil); err != nil {
-		slog.Error("[program]初始化数据库失败", "error", err)
+		slog.Error("[program] 初始化数据库失败", "error", err)
 		panic(err)
 	}
 
-	// 初始化网络模块
-	network.Init(network.GetConfig())
-
-	// 初始化解析器模块
-	parser.InitModule()
-
-	// 初始化通知模块
-	notification.InitModule()
-	// 初始化下载客户端
-	// download.Client.Init(download.Client.GetConfig())
-	download.InitModule()
-	// 初始化重命名模块
-	rename.InitModule()
-
-	// 检查配置文件是否需要更新
-	if conf.NeedUpdate {
-		err := conf.SaveConfig()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("[program]配置文件已更新")
-	}
+	// Initialize modules with injected config
+	network.Init(&cfg.Proxy)
+	parser.Init(&cfg.Parser)
+	notification.NotificationClient.Init(&cfg.Notification)
+	download.Client.Init(&cfg.Downloader)
+	rename.Init(&cfg.Rename)
 }
 
 func (p *Program) Start(ctx context.Context) {
@@ -102,7 +83,7 @@ func InitScheduler(ctx context.Context, runner *taskrunner.TaskRunner) {
 		return
 	}
 
-	s.AddTask(task.NewRSSRefreshTask())
+	s.AddTask(task.NewRSSRefreshTask(conf.Get().Program))
 	s.AddTask(task.NewDownloadTask(runner))
 
 	s.Start()
