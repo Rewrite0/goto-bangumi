@@ -9,7 +9,8 @@ import (
 type TaskPhase int
 
 const (
-	PhaseChecking    TaskPhase = iota // 检查下载是否成功添加
+	PhaseAdding      TaskPhase = iota // 添加到下载器
+	PhaseChecking                     // 检查下载是否成功添加
 	PhaseDownloading                  // 下载中，等待完成
 	PhaseRenaming                     // 重命名文件
 	PhaseCompleted                    // 完成
@@ -19,6 +20,8 @@ const (
 
 func (p TaskPhase) String() string {
 	switch p {
+	case PhaseAdding:
+		return "adding"
 	case PhaseChecking:
 		return "checking"
 	case PhaseDownloading:
@@ -58,7 +61,7 @@ type Task struct {
 
 func NewTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
-		Phase:     PhaseChecking,
+		Phase:     PhaseAdding,
 		StartTime: time.Now(),
 		Torrent:   torrent,
 		Bangumi:   bangumi,
