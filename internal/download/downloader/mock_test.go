@@ -253,6 +253,200 @@ func TestMockDownloader_DeleteAliased(t *testing.T) {
 	}
 }
 
+// 编译期接口一致性检查
+var _ BaseDownloader = (*MockDownloader)(nil)
+
+func TestMockDownloader_InterfaceLifecycle(t *testing.T) {
+	// 通过 BaseDownloader 接口使用，模拟真实消费者的完整使用流程
+	var d BaseDownloader = NewMockDownloader()
+	ctx := context.Background()
+
+	// 1. Init
+	err := d.Init(&model.DownloaderConfig{
+		Type:     "mock",
+		SavePath: "/downloads/Bangumi",
+		Host:     "127.0.0.1:8080",
+		Username: "admin",
+		Password: "adminadmin",
+	})
+	if err != nil {
+		t.Fatalf("Init error: %v", err)
+	}
+
+	// 2. Auth
+	ok, err := d.Auth(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Auth failed: ok=%v, err=%v", ok, err)
+	}
+
+	// 3. Add 种子
+	torrentInfo := &model.TorrentInfo{
+		Name:       "Lifecycle Test Anime - 01",
+		InfoHashV1: "lifecycle1111222233334444555566667777aaaa",
+	}
+	hashes, err := d.Add(ctx, torrentInfo, "/downloads/lifecycle")
+	if err != nil {
+		t.Fatalf("Add error: %v", err)
+	}
+	if len(hashes) == 0 {
+		t.Fatal("Add should return at least one hash")
+	}
+	hash := hashes[0]
+
+	// 4. CheckHash 确认存在
+	got, err := d.CheckHash(ctx, hash)
+	if err != nil {
+		t.Fatalf("CheckHash error: %v", err)
+	}
+	if got != hash {
+		t.Errorf("CheckHash = %q, want %q", got, hash)
+	}
+
+	// 5. 查询进度直到完成
+	var info *model.TorrentDownloadInfo
+	for i := 0; i < 5; i++ {
+		info, err = d.GetTorrentInfo(ctx, hash)
+		if err != nil {
+			t.Fatalf("GetTorrentInfo error: %v", err)
+		}
+		if info.Completed == 1 {
+			break
+		}
+	}
+	if info.Completed != 1 {
+		t.Errorf("torrent should be completed after polling, got Completed=%d", info.Completed)
+	}
+
+	// 6. GetTorrentFiles
+	files, err := d.GetTorrentFiles(ctx, hash)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles error: %v", err)
+	}
+	if len(files) == 0 {
+		t.Error("expected at least one file")
+	}
+
+	// 7. Rename
+	oldName := files[0]
+	newName := "Lifecycle Test - S01E01.mp4"
+	ok, err = d.Rename(ctx, hash, oldName, newName)
+	if err != nil || !ok {
+		t.Fatalf("Rename failed: ok=%v, err=%v", ok, err)
+	}
+	files, _ = d.GetTorrentFiles(ctx, hash)
+	if files[0] != newName {
+		t.Errorf("after rename: files[0] = %q, want %q", files[0], newName)
+	}
+
+	// 8. Move
+	ok, err = d.Move(ctx, []string{hash}, "/downloads/final")
+	if err != nil || !ok {
+		t.Fatalf("Move failed: ok=%v, err=%v", ok, err)
+	}
+	info, _ = d.GetTorrentInfo(ctx, hash)
+	if info.SavePath != "/downloads/final" {
+		t.Errorf("after move: SavePath = %q, want /downloads/final", info.SavePath)
+	}
+
+	// 9. TorrentsInfo 能查到
+	all, err := d.TorrentsInfo(ctx, "", "", nil, 0)
+	if err != nil {
+		t.Fatalf("TorrentsInfo error: %v", err)
+	}
+	found := false
+	for _, item := range all {
+		if item["hash"] == hash {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("added torrent not found in TorrentsInfo")
+	}
+
+	// 10. Delete
+	ok, err = d.Delete(ctx, []string{hash})
+	if err != nil || !ok {
+		t.Fatalf("Delete failed: ok=%v, err=%v", ok, err)
+	}
+	_, err = d.CheckHash(ctx, hash)
+	if err == nil {
+		t.Error("CheckHash should fail after delete")
+	}
+
+	// 11. GetInterval
+	if d.GetInterval() <= 0 {
+		t.Errorf("GetInterval = %d, want > 0", d.GetInterval())
+	}
+
+	// 12. Logout
+	ok, err = d.Logout(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Logout failed: ok=%v, err=%v", ok, err)
+	}
+}
+
+func TestMockDownloader_NonExistentHash(t *testing.T) {
+	d := newTestMock(t)
+	ctx := context.Background()
+	fakeHash := "0000000000000000000000000000000000000000"
+
+	// GetTorrentInfo 返回 nil, nil
+	info, err := d.GetTorrentInfo(ctx, fakeHash)
+	if err != nil {
+		t.Errorf("GetTorrentInfo error: %v", err)
+	}
+	if info != nil {
+		t.Errorf("GetTorrentInfo should return nil for non-existent hash, got %+v", info)
+	}
+
+	// GetTorrentFiles 返回空切片
+	files, err := d.GetTorrentFiles(ctx, fakeHash)
+	if err != nil {
+		t.Errorf("GetTorrentFiles error: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("GetTorrentFiles should return empty slice, got %v", files)
+	}
+
+	// CheckHash 返回 DownloadKeyError
+	_, err = d.CheckHash(ctx, fakeHash)
+	if err == nil {
+		t.Error("CheckHash should return error for non-existent hash")
+	}
+	if !apperrors.IsKeyError(err) {
+		t.Errorf("expected DownloadKeyError, got %T: %v", err, err)
+	}
+
+	// Rename 对不存在的 hash 不报错
+	ok, err := d.Rename(ctx, fakeHash, "old", "new")
+	if err != nil {
+		t.Errorf("Rename error: %v", err)
+	}
+	if !ok {
+		t.Error("Rename should return true even for non-existent hash")
+	}
+
+	// Delete 对不存在的 hash 不报错
+	ok, err = d.Delete(ctx, []string{fakeHash})
+	if err != nil {
+		t.Errorf("Delete error: %v", err)
+	}
+	if !ok {
+		t.Error("Delete should return true even for non-existent hash")
+	}
+}
+
+func TestNewDownloader_MockType(t *testing.T) {
+	d := NewDownloader("mock")
+	if d == nil {
+		t.Fatal("NewDownloader('mock') returned nil")
+	}
+	if _, ok := d.(*MockDownloader); !ok {
+		t.Errorf("NewDownloader('mock') returned %T, want *MockDownloader", d)
+	}
+}
+
 func TestMockDownloader_AuthLogoutInterval(t *testing.T) {
 	d := newTestMock(t)
 	ctx := context.Background()

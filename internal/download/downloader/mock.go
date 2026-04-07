@@ -65,16 +65,12 @@ func (d *MockDownloader) Init(config *model.DownloaderConfig) error {
 
 // Auth 认证登录
 func (d *MockDownloader) Auth(ctx context.Context) (bool, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.loggedIn = true
 	return true, nil
 }
 
 // Logout 登出
 func (d *MockDownloader) Logout(ctx context.Context) (bool, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.loggedIn = false
 	return true, nil
 }
