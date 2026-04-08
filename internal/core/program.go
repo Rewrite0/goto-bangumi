@@ -58,11 +58,11 @@ func (p *Program) Start(ctx context.Context) {
 	go download.Client.Login(p.ctx)
 
 	// 创建并启动 taskrunner
-	runner := taskrunner.New(taskrunner.DefaultConfig())
-	runner.Register(model.PhaseAdding, handlers.NewAddHandler(), true)          // 唯一受限阶段
-	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(), false)     // 轻量查询
-	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(), false) // 轻量轮询
-	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(), false)    // 本地文件操作
+	runner := taskrunner.New(64, 4)
+	runner.Register(model.PhaseAdding, handlers.NewAddHandler())       // 唯一受限阶段（持有流水线槽位）
+	runner.Register(model.PhaseChecking, handlers.NewCheckHandler())   // 轻量查询
+	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler()) // 轻量轮询
+	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler())  // 本地文件操作
 	runner.Start(p.ctx)
 
 	// 启动调度器

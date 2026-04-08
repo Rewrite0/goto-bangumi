@@ -11,56 +11,40 @@ import (
 
 // phaseEntry 阶段配置
 type phaseEntry struct {
-	phase      model.TaskPhase
-	handler    PhaseFunc
-	needsLimit bool // true = 需要获取 downloadSem
-}
-
-// Config TaskRunner 配置
-type Config struct {
-	MaxDownloadConcurrency int // download-bound 阶段最大并发数
-	QueueSize              int // 队列容量
-}
-
-// DefaultConfig 默认配置
-func DefaultConfig() Config {
-	return Config{
-		MaxDownloadConcurrency: 4,
-		QueueSize:              64,
-	}
+	phase   model.TaskPhase
+	handler PhaseFunc
 }
 
 // TaskRunner 任务执行器
 type TaskRunner struct {
-	store       *TaskStore
-	phases      []phaseEntry
-	queue       chan *model.Task
-	downloadSem chan struct{}
-	wg          sync.WaitGroup
-	cancel      context.CancelFunc
+	store     *TaskStore
+	phases    []phaseEntry
+	queue     chan *model.Task
+	addingSem chan struct{} // 流水线槽位信号量
+	wg        sync.WaitGroup
+	cancel    context.CancelFunc
 }
 
 // New 创建任务执行器
-func New(config Config) *TaskRunner {
-	if config.MaxDownloadConcurrency <= 0 {
-		config.MaxDownloadConcurrency = 4
+func New(queueSize, maxConcurrency int) *TaskRunner {
+	if maxConcurrency <= 0 {
+		maxConcurrency = 4
 	}
-	if config.QueueSize <= 0 {
-		config.QueueSize = 64
+	if queueSize <= 0 {
+		queueSize = 64
 	}
 	return &TaskRunner{
-		store:       NewTaskStore(),
-		queue:       make(chan *model.Task, config.QueueSize),
-		downloadSem: make(chan struct{}, config.MaxDownloadConcurrency),
+		store:     NewTaskStore(),
+		queue:     make(chan *model.Task, queueSize),
+		addingSem: make(chan struct{}, maxConcurrency),
 	}
 }
 
 // Register 注册阶段处理器
-func (r *TaskRunner) Register(phase model.TaskPhase, handler PhaseFunc, needsLimit bool) {
+func (r *TaskRunner) Register(phase model.TaskPhase, handler PhaseFunc) {
 	r.phases = append(r.phases, phaseEntry{
-		phase:      phase,
-		handler:    handler,
-		needsLimit: needsLimit,
+		phase:   phase,
+		handler: handler,
 	})
 }
 
@@ -131,11 +115,13 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 		return
 	}
 
-	// Download-bound 阶段需要获取信号量
-	if entry.needsLimit {
+	// Adding 阶段 acquire 流水线槽位
+	if task.Phase == model.PhaseAdding {
 		select {
-		case r.downloadSem <- struct{}{}:
-			defer func() { <-r.downloadSem }()
+		case r.addingSem <- struct{}{}:
+			task.Mu.Lock()
+			task.HoldingSlot = true
+			task.Mu.Unlock()
 		case <-ctx.Done():
 			return
 		}
@@ -148,6 +134,7 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 		task.Phase = model.PhaseFailed
 		task.ErrorMsg = result.Err.Error()
 		task.Mu.Unlock()
+		r.releaseSlot(task)
 		r.store.Remove(task.Torrent.Link)
 		slog.Error("[taskrunner] 任务失败",
 			"torrent", task.Torrent.Name,
@@ -180,6 +167,7 @@ func (r *TaskRunner) advance(ctx context.Context, task *model.Task) {
 	task.Mu.Unlock()
 
 	if nextPhase == model.PhaseEnd {
+		r.releaseSlot(task)
 		r.store.Remove(task.Torrent.Link)
 		slog.Info("[taskrunner] 任务完成", "torrent", task.Torrent.Name)
 		return
@@ -194,6 +182,16 @@ func (r *TaskRunner) advance(ctx context.Context, task *model.Task) {
 	select {
 	case r.queue <- task:
 	case <-ctx.Done():
+	}
+}
+
+// releaseSlot 释放流水线槽位
+func (r *TaskRunner) releaseSlot(task *model.Task) {
+	task.Mu.Lock()
+	defer task.Mu.Unlock()
+	if task.HoldingSlot {
+		<-r.addingSem
+		task.HoldingSlot = false
 	}
 }
 
