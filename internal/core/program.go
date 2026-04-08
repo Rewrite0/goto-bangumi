@@ -84,8 +84,7 @@ func InitScheduler(ctx context.Context, runner *taskrunner.TaskRunner) {
 		return
 	}
 
-	s.AddTask(task.NewRSSRefreshTask(conf.Get().Program))
-	s.AddTask(task.NewDownloadTask(runner))
+	s.AddTask(task.NewRSSRefreshTask(conf.Get().Program, runner))
 
 	s.Start()
 

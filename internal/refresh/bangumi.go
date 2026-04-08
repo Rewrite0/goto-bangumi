@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"goto-bangumi/internal/database"
-	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/network"
+	"goto-bangumi/internal/taskrunner"
 )
 
 // 流程为: 取种子列表 -> 对比数据库中已有的种子 -> 返回新增的种子 -> 检查是否有对应的番剧信息
@@ -45,7 +45,7 @@ func FindNewBangumi(ctx context.Context, rssItem *model.RSSItem) {
 	}
 }
 
-func RefreshRSS(ctx context.Context, url string) {
+func RefreshRSS(ctx context.Context, url string, runner *taskrunner.TaskRunner) {
 	torrents := getTorrents(ctx, url)
 	db := database.GetDB()
 	for _, t := range torrents {
@@ -55,7 +55,8 @@ func RefreshRSS(ctx context.Context, url string) {
 		}
 		if FilterTorrent(t, metaData.IncludeFilter, metaData.ExcludeFilter) {
 			t.Bangumi = metaData
-			go download.DQueue.Add(ctx, t, t.Bangumi)
+			_ = db.CreateTorrent(ctx, t)
+			runner.Submit(model.NewAddTask(t, t.Bangumi))
 		}
 	}
 }

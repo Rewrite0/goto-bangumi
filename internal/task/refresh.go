@@ -10,21 +10,24 @@ import (
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/refresh"
+	"goto-bangumi/internal/taskrunner"
 )
 
 // RSSRefreshTask RSS 刷新任务
 type RSSRefreshTask struct {
 	interval time.Duration
 	enabled  bool
+	runner   *taskrunner.TaskRunner
 }
 
 // NewRSSRefreshTask 创建 RSS 刷新任务
-func NewRSSRefreshTask(programConfig model.ProgramConfig) *RSSRefreshTask {
+func NewRSSRefreshTask(programConfig model.ProgramConfig, runner *taskrunner.TaskRunner) *RSSRefreshTask {
 	interval := programConfig.RssTime
 
 	task := &RSSRefreshTask{
 		interval: time.Duration(interval) * time.Second,
-		enabled:  true, // 默认启用
+		enabled:  true,
+		runner:   runner,
 	}
 
 	slog.Debug("[task rss]创建 RSS 刷新任务", "间隔", task.interval)
@@ -66,7 +69,7 @@ func (t *RSSRefreshTask) Run(ctx context.Context) error {
 			slog.Debug("[refresh] 刷新 RSS 源", "名称", rss.Name, "URL", rss.Link)
 
 			// 调用 refresh 模块的刷新方法
-			refresh.RefreshRSS(ctx, rss.Link)
+			refresh.RefreshRSS(ctx, rss.Link, t.runner)
 
 			// 为了避免短时间内请求过多，每个 RSS 源之间间隔一点时间
 			time.Sleep(2 * time.Second)
