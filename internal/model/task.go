@@ -61,11 +61,21 @@ type Task struct {
 	Bangumi *Bangumi
 }
 
-func NewTask(torrent *Torrent, bangumi *Bangumi) *Task {
+// NewAddTask 创建下载任务（从 PhaseAdding 开始）
+func NewAddTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
 		Phase:     PhaseAdding,
 		StartTime: time.Now(),
 		Torrent:   torrent,
 		Bangumi:   bangumi,
+	}
+}
+
+// NewRenameTask 创建重命名任务（从 PhaseRenaming 开始）
+func NewRenameTask(torrent *Torrent, bangumi *Bangumi) *Task {
+	return &Task{
+		Phase:   PhaseRenaming,
+		Torrent: torrent,
+		Bangumi: bangumi,
 	}
 }

@@ -51,7 +51,7 @@ func (t *DownloadTask) Run(ctx context.Context) error {
 		download.DQueue.InQueue.Delete(torrent.Link)
 
 		slog.Debug("[download task] 提交任务到 taskrunner", "Name", torrent.Name)
-		task := model.NewTask(torrent, bangumi)
+		task := model.NewAddTask(torrent, bangumi)
 		t.runner.Submit(task)
 	default:
 	}

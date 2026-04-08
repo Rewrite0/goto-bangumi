@@ -326,6 +326,57 @@ func TestPipelineSlot_LimitsConcurrency(t *testing.T) {
 	}
 }
 
+func TestNewRenameTask_SkipsToRenamePhase(t *testing.T) {
+	renameHandler, renameCount := successHandler()
+
+	runner := New(16, 2)
+	runner.Register(model.PhaseAdding, func(ctx context.Context, task *model.Task) PhaseResult {
+		t.Error("add handler should not be called for rename task")
+		return PhaseResult{}
+	})
+	runner.Register(model.PhaseChecking, func(ctx context.Context, task *model.Task) PhaseResult {
+		t.Error("check handler should not be called for rename task")
+		return PhaseResult{}
+	})
+	runner.Register(model.PhaseDownloading, func(ctx context.Context, task *model.Task) PhaseResult {
+		t.Error("download handler should not be called for rename task")
+		return PhaseResult{}
+	})
+	runner.Register(model.PhaseRenaming, renameHandler)
+
+	ctx := context.Background()
+	runner.Start(ctx)
+	defer runner.Stop()
+
+	task := model.NewRenameTask(
+		&model.Torrent{Link: "magnet:rename-only", Name: "test-rename"},
+		&model.Bangumi{},
+	)
+	ok := runner.Submit(task)
+	if !ok {
+		t.Fatal("Submit should succeed")
+	}
+
+	deadline := time.After(3 * time.Second)
+	for runner.Store().Get("magnet:rename-only") != nil {
+		select {
+		case <-deadline:
+			t.Fatal("task did not complete within deadline")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	if v := renameCount.Load(); v != 1 {
+		t.Errorf("rename handler called %d times, want 1", v)
+	}
+	if task.Phase != model.PhaseEnd {
+		t.Errorf("task phase = %v, want PhaseEnd", task.Phase)
+	}
+	if task.HoldingSlot {
+		t.Error("rename task should never hold a slot")
+	}
+}
+
 func TestReleaseSlot_OnFailure(t *testing.T) {
 	// 验证任务失败时槽位被正确释放，不会死锁后续任务
 	addHandler, _ := successHandler()
