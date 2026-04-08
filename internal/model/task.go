@@ -49,6 +49,8 @@ type Task struct {
 	Mu    sync.Mutex
 	Phase TaskPhase
 
+	HoldingSlot bool // 是否持有流水线槽位
+
 	// 业务数据
 	Guids     []string  // 可能的 hash 列表
 	StartTime time.Time // 开始下载时间（用于超时判断）
