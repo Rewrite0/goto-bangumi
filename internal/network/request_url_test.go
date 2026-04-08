@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	_ "embed"
 	"os"
 	"testing"
@@ -26,7 +27,7 @@ func TestGetRSS(t *testing.T) {
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=583"
 
 	netClient := GetRequestClient()
-	rss, err := netClient.GetRSS(rssURL)
+	rss, err := netClient.GetRSS(context.Background(), rssURL)
 	if err != nil {
 		t.Fatalf("Error fetching RSS: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestGetRSSTitle(t *testing.T) {
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=583"
 
 	netClient := GetRequestClient()
-	title, err := netClient.GetRSSTitle(rssURL)
+	title, err := netClient.GetRSSTitle(context.Background(), rssURL)
 	if err != nil {
 		t.Errorf("Error fetching RSS title: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestGetTorrents(t *testing.T) {
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=583"
 
 	netClient := GetRequestClient()
-	torrents, err := netClient.GetTorrents(rssURL)
+	torrents, err := netClient.GetTorrents(context.Background(), rssURL)
 	if err != nil {
 		t.Fatalf("Error fetching torrents: %v", err)
 	}
@@ -104,8 +105,8 @@ func TestGetTorrents(t *testing.T) {
 
 		// 验证 URL（应该是 Enclosure.URL）
 		expectedURL := "https://mikanani.me/Download/20240929/33fbab8f53fe4bad12f07afa5abdb7c4afa5956c.torrent"
-		if firstTorrent.URL != expectedURL {
-			t.Errorf("First torrent URL = %q, want %q", firstTorrent.URL, expectedURL)
+		if firstTorrent.Link != expectedURL {
+			t.Errorf("First torrent URL = %q, want %q", firstTorrent.Link, expectedURL)
 		}
 
 		// 验证 Homepage（应该是 Link）
@@ -125,8 +126,8 @@ func TestGetTorrents(t *testing.T) {
 		}
 
 		expectedURL := "https://mikanani.me/Download/20240714/4a6f89e788f32e84e65f4b14d33cf0964ad68c48.torrent"
-		if lastTorrent.URL != expectedURL {
-			t.Errorf("Last torrent URL = %q, want %q", lastTorrent.URL, expectedURL)
+		if lastTorrent.Link != expectedURL {
+			t.Errorf("Last torrent URL = %q, want %q", lastTorrent.Link, expectedURL)
 		}
 	}
 }
