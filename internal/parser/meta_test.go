@@ -229,6 +229,16 @@ func TestRawParser(t *testing.T) {
 			wantCollection: false,
 			wantVersion:    2,
 		},
+		{
+			name:         "ANi - 实力至上主义的教室 第四季",
+			content:      "[ANi] 欢迎来到实力至上主义的教室 第四季 2年级篇 第一学期 - 02 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
+			wantGroup:    "ANi",
+			wantTitleRaw: "欢迎来到实力至上主义的教室",
+			wantRes:      "1080P",
+			wantEp:       2,
+			wantSeason:   4,
+			wantSub:      "繁",
+		},
 		// ============ 合集测试用例 ============
 		{
 			name:             "安達與島村 - 第01-02話合集",
@@ -244,7 +254,7 @@ func TestRawParser(t *testing.T) {
 		{
 			name:             "从零开始的异世界生活 - 34-35合集",
 			content:          "[从零开始的异世界生活 第二季_Re Zero S2][34-35][繁体][720P][MP4]",
-			wantTitleRaw:     "_Re Zero S2",
+			wantTitleRaw:     "从零开始的异世界生活",
 			wantRes:          "720P",
 			wantSeason:       2,
 			wantEp:           -1,

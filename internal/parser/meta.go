@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -390,12 +391,13 @@ func (p *TitleMetaParser) nameProcess() (string, string, string) {
 	}
 
 	var animeTitle string
+	fmt.Printf("Tokens: %+v\n", p.token)
 
 	if len(p.token) == 1 {
 		animeTitle = p.token[0]
-	} else if len(p.token) == 2 {
-		animeTitle = p.token[1]
-	} else if len(p.token) > 2 {
+	} else  {
+	// 	animeTitle = p.token[1]
+	// } else if len(p.token) > 2 {
 		tokenPriority[1] += 4
 		for idx := 0; idx < 3 && idx < len(p.token); idx++ {
 			token := p.token[idx]
