@@ -23,6 +23,13 @@ func TestMain(m *testing.M) {
 	searchURLHyakushoStar := SearchURL("★百姓贵族")
 	network.SetTestCache(searchURLHyakushoStar, tmdbSearchHyakushoStar)
 
+	// 设置 TMDB 测试缓存 - 欢迎来到实力至上主义的教室
+	searchURLClassroom := SearchURL("欢迎来到实力至上主义的教室")
+	network.SetTestCache(searchURLClassroom, tmdbSearchClassroom)
+
+	infoURLClassroom := InfoURL(72517, "zh")
+	network.SetTestCache(infoURLClassroom, tmdbInfoClassroom72517)
+
 	// 设置 Mikan 测试缓存 - 拥有超常技能的异世界流浪美食家 第二季
 	network.SetTestCache("https://mikanani.me/Home/Episode/8c94c1699735481c8b2b18dba38908042f53adcc", mikan3751HTML)
 

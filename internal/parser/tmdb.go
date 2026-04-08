@@ -37,7 +37,9 @@ var Language = map[string]string{
 }
 
 func InitTmdb(key string) {
-	tmdbKey = key
+	if key != "" {
+		tmdbKey = key
+	}
 }
 
 // TMDBParser handles TMDB API interactions and parsing
@@ -121,6 +123,7 @@ func GetSeason(seasons []model.SeasonTmdb) model.SeasonTmdb {
 			}
 		}
 	}
+	println("valid seasons count:", len(validSeasons))
 	// 不知道为什么会这样, 对没有有效的处理一下
 	if len(validSeasons) == 0 {
 		for _, s := range seasons {
@@ -137,7 +140,7 @@ func GetSeason(seasons []model.SeasonTmdb) model.SeasonTmdb {
 	})
 
 	// 时间不能早于现在时间
-	lastSeason := validSeasons[len(validSeasons)-1]
+	lastSeason := validSeasons[0]
 	return lastSeason
 }
 
@@ -210,6 +213,7 @@ func (p *TMDBParser) TMDBParse(ctx context.Context, title string, language strin
 
 	// 用最后一个季度作为当前季度
 	lastSeason := GetSeason(tvShow.Seasons)
+	println("last season number:", lastSeason.SeasonNumber, "air date:", lastSeason.AirDate)
 
 	// 不以季度的年份为准， 因为tmdb 是以最先播出的时间为准
 	seasonTime, err := time.Parse("2006-01-02", content.FirstAirDate)

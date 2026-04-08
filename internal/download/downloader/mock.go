@@ -144,9 +144,7 @@ func (d *MockDownloader) GetTorrentInfo(ctx context.Context, hash string) (*mode
 		mt.info.ETA = 0
 	} else {
 		eta := 300 - mt.queryCount*100
-		if eta < 0 {
-			eta = 0
-		}
+		eta = max(eta, 0)
 		mt.info.ETA = eta
 	}
 

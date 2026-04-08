@@ -129,7 +129,6 @@ func (r *RequestClient) Get(ctx context.Context, url string) ([]byte, error) {
 	// 2. 使用 singleflight 防止并发重复请求
 	v, err, shared := requestGroup.Do(url, func() (any, error) {
 		// 2.2 执行实际 HTTP 请求
-		fmt.Println("Fetching URL:", url)
 		slog.Debug("[Network] Executing HTTP request", "url", url)
 		resp, err := r.client.R().SetContext(ctx).Get(url)
 		if err != nil {

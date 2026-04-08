@@ -153,7 +153,7 @@ func TestMikanParseEdgeCase(t *testing.T) {
 	t.Run("没有poster链接时使用默认图片", func(t *testing.T) {
 		homepage := "https://mikanani.me/Home/Episode/699000310671bae565c37abb20d119824efeb6f0"
 		// 缓存已在 TestMain 中集中设置
-		posterLink, err := parser.PosterParse(homepage)
+		posterLink, err := parser.PosterParse(context.Background(), homepage)
 		// 应该能够解析出poster链接（即使是默认图片）
 		if err != nil {
 			t.Logf("PosterParse error (expected): %v", err)

@@ -19,6 +19,12 @@ var tmdbSearchHyakusho []byte
 //go:embed testdata/tmdb_search_hyakusho_star.json
 var tmdbSearchHyakushoStar []byte
 
+//go:embed testdata/tmdb_search_classroom.json
+var tmdbSearchClassroom []byte
+
+//go:embed testdata/tmdb_info_72517.json
+var tmdbInfoClassroom72517 []byte
+
 func TestTMDBSearch(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -87,6 +93,18 @@ func TestTmdbParse(t *testing.T){
 			wantYear:          "2024",
 			wantSeason:        "1",
 			wantPosterLink:    "https://image.tmdb.org/t/p/w780/vgfhyqA6n8WWiDhHXdVRBMHAqQw.jpg",
+		},
+		{
+			name:              "欢迎来到实力至上主义的教室（使用缓存）",
+			title:             "欢迎来到实力至上主义的教室",
+			mockSearchData:    tmdbSearchClassroom,
+			mockInfoData:      tmdbInfoClassroom72517,
+			wantID:            72517,
+			wantTitle:         "欢迎来到实力至上主义的教室",
+			wantOriginalTitle: "ようこそ実力至上主義の教室へ",
+			wantYear:          "2017",
+			wantSeason:        "4",
+			wantPosterLink:    "https://image.tmdb.org/t/p/w780/pQf2CYvrZBVFEFD1OfDMm9m4ndf.jpg",
 		},
 	}
 	for _, tt := range tests {
