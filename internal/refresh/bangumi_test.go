@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"goto-bangumi/internal/database"
+	"goto-bangumi/internal/model"
 )
 
 // TestFindNewBangumi_NormalFlow 测试 FindNewBangumi 的正常流程
@@ -127,7 +128,7 @@ func TestGetTorrents_WithExisting(t *testing.T) {
 
 	// 将第一个种子标记为已下载
 	db := database.GetDB()
-	firstTorrents[0].Downloaded = 1
+	firstTorrents[0].Downloaded = model.DownloadSending
 	db.CreateTorrent(firstTorrents[0])
 
 	// 第二次获取，应该少一个

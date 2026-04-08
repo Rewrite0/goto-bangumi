@@ -2,6 +2,10 @@ package refresh
 
 import (
 	"context"
+	"errors"
+	"log/slog"
+
+	"gorm.io/gorm"
 
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
@@ -16,7 +20,7 @@ import (
 func getTorrents(ctx context.Context, url string) []*model.Torrent {
 	client := network.GetRequestClient()
 	torrents, _ := client.GetTorrents(ctx, url)
-	// TODO: 应该先在 task 里面看看有没有什么已经在任务里面的了
+	slog.Debug("[getTorrents]从 RSS 获取种子列表", "URL", url, "数量", len(torrents))
 	db := database.GetDB()
 	newTorrents, _ := db.CheckNewTorrents(ctx, torrents)
 	return newTorrents
@@ -24,6 +28,7 @@ func getTorrents(ctx context.Context, url string) []*model.Torrent {
 
 // FindNewBangumi 从 rss 里面看看没有没新的番剧
 func FindNewBangumi(ctx context.Context, rssItem *model.RSSItem) {
+	slog.Info("[FindNewBangumi]检查 RSS 是否有新的番剧", "RSS 名称", rssItem.Name)
 	netClient := network.GetRequestClient()
 	torrents, _ := netClient.GetTorrents(ctx, rssItem.Link)
 	db := database.GetDB()
@@ -34,22 +39,26 @@ func FindNewBangumi(ctx context.Context, rssItem *model.RSSItem) {
 		_, err := db.GetBangumiParseByTitle(ctx, t.Name)
 		// 没有找到, 说明是新的番剧
 		// 先过一下基础 filter
-		if err != nil {
-			continue
-		}
-		if FilterTorrent(t, rssItem.ExcludeFilter, rssItem.IncludeFilter) {
-			// 要进行一个去重, 一些torrent 是没必要都解析的
-			// 进行 metaparser 解析
-			createBangumi(ctx, db, t, rssItem)
+		if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Debug("[FindNewBangumi]没有找到番剧信息，可能是新的番剧", "种子名称", t.Name, "error", err)
+			if FilterTorrent(t, rssItem.ExcludeFilter, rssItem.IncludeFilter) {
+				// 要进行一个去重, 一些torrent 是没必要都解析的
+				// 进行 metaparser 解析
+				slog.Info("[FindNewBangumi]发现新的番剧", "种子名称", t.Name)
+				createBangumi(ctx, db, t, rssItem)
+			}
 		}
 	}
 }
 
 func RefreshRSS(ctx context.Context, url string, runner *taskrunner.TaskRunner) {
+	slog.Info("[RefreshRSS]刷新 RSS", "URL", url)
 	torrents := getTorrents(ctx, url)
+	slog.Debug("[RefreshRSS]获取种子列表", "数量", len(torrents))
 	db := database.GetDB()
 	for _, t := range torrents {
 		metaData, err := db.GetBangumiParseByTitle(ctx, t.Name)
+		slog.Debug("[RefreshRSS]检查番剧信息", "种子名称", t.Name, "error", err)
 		if err != nil {
 			continue
 		}

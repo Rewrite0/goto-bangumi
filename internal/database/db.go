@@ -125,7 +125,7 @@ func (db *DB) GetTorrentByID(ctx context.Context, id uint) (*model.Torrent, erro
 // GetTorrentByURL 根据 URL 获取种子
 func (db *DB) GetTorrentByURL(ctx context.Context, url string) (*model.Torrent, error) {
 	var torrent model.Torrent
-	err := db.WithContext(ctx).Where("url = ?", url).First(&torrent).Error
+	err := db.WithContext(ctx).Where("Link = ?", url).First(&torrent).Error
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (db *DB) ListTorrentByBangumi(ctx context.Context, title string, season int
 // FindUnrenamedTorrent 查询已下载但未重命名的种子
 func (db *DB) FindUnrenamedTorrent(ctx context.Context) ([]*model.Torrent, error) {
 	var torrents []*model.Torrent
-	err := db.WithContext(ctx).Where("downloaded = ? AND renamed = ?", true, false).
+	err := db.WithContext(ctx).Where("downloaded = ? AND renamed = ?", model.DownloadDone, false).
 		Find(&torrents).Error
 	return torrents, err
 }
@@ -165,11 +165,12 @@ func (db *DB) CheckNewTorrents(ctx context.Context, torrents []*model.Torrent) (
 	for _, torrent := range torrents {
 		existing, err := db.GetTorrentByURL(ctx, torrent.Link)
 		if err != nil && err != gorm.ErrRecordNotFound {
+			slog.Error("[CheckNewTorrents]检查种子是否存在失败", "URL", torrent.Link, "error", err)
 			return nil, err
 		}
-
 		// 不存在的种子
 		if existing == nil {
+			slog.Debug("[CheckNewTorrents]发现新种子", "URL", torrent.Link)
 			newTorrents = append(newTorrents, torrent)
 		}
 	}
@@ -179,7 +180,7 @@ func (db *DB) CheckNewTorrents(ctx context.Context, torrents []*model.Torrent) (
 
 // DeleteTorrentByURL 根据 URL 删除种子
 func (db *DB) DeleteTorrentByURL(ctx context.Context, url string) error {
-	return db.WithContext(ctx).Where("url = ?", url).Delete(&model.Torrent{}).Error
+	return db.WithContext(ctx).Where("Link = ?", url).Delete(&model.Torrent{}).Error
 }
 
 // DeleteTorrentByDownloadUID 根据下载 UID 删除种子
@@ -282,6 +283,7 @@ func (db *DB) GetBangumiParseByTitle(ctx context.Context, torrentName string) (*
 	var bangumi model.Bangumi
 	err = db.WithContext(ctx).First(&bangumi, metaData.BangumiID).Error
 	if err != nil {
+		slog.Debug("[GetBangumiParseByTitle]根据标题查询番剧解析器失败", "torrentName", torrentName, "error", err)
 		return nil, err
 	}
 	return &bangumi, nil
@@ -403,7 +405,7 @@ func (db *DB) GetTorrentWithDetails(ctx context.Context, url string) (*model.Tor
 	var torrent model.Torrent
 	err := db.WithContext(ctx).Preload("Bangumi").
 		Preload("BangumiParse").
-		Where("url = ?", url).
+		Where("Link = ?", url).
 		First(&torrent).Error
 	if err != nil {
 		return nil, err

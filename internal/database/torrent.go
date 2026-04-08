@@ -31,7 +31,7 @@ func (db *DB) AddTorrentDownload(ctx context.Context, link string) error {
 		slog.Error("[database] 标记种子已下载失败，未找到种子", "link", link, "error", err)
 		return err
 	}
-	t.Downloaded = 2
+	t.Downloaded = model.DownloadDone
 	err = db.WithContext(ctx).Save(&t).Error
 	return err
 }
@@ -43,7 +43,7 @@ func (db *DB) AddTorrentError(ctx context.Context, link string) error {
 		slog.Error("[database] 标记种子下载出错失败，未找到种子", "link", link, "error", err)
 		return err
 	}
-	t.Downloaded = 4
+	t.Downloaded = model.DownloadError
 	err = db.WithContext(ctx).Save(&t).Error
 	return err
 }
@@ -75,7 +75,7 @@ func (db *DB) AddTorrentDUID(ctx context.Context, link string, guid string) erro
 	}
 	t.DownloadUID = guid
 	// 标记为已发送到下载器
-	t.Downloaded = 1
+	t.Downloaded = model.DownloadSending
 	err = db.WithContext(ctx).Save(&t).Error
 	return err
 }

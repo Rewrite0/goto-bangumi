@@ -67,6 +67,7 @@ func (t *RSSRefreshTask) Run(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			slog.Debug("[refresh] 刷新 RSS 源", "名称", rss.Name, "URL", rss.Link)
+			refresh.FindNewBangumi(ctx, rss);
 
 			// 调用 refresh 模块的刷新方法
 			refresh.RefreshRSS(ctx, rss.Link, t.runner)

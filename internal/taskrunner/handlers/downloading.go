@@ -41,7 +41,7 @@ func NewDownloadingHandler() taskrunner.PhaseFunc {
 
 		// 检查是否下载完成（Completed > 0 表示已完成，为 Unix 时间戳）
 		if info.Completed > 0 {
-			task.Torrent.Downloaded = 2
+			task.Torrent.Downloaded = model.DownloadDone
 			if err := database.GetDB().AddTorrentDownload(ctx, task.Torrent.Link); err != nil {
 				slog.Error("[downloading handler] 更新种子状态失败", "error", err)
 				return taskrunner.PhaseResult{Err: err}

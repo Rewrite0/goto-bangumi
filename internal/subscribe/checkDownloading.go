@@ -52,7 +52,7 @@ func (cds *checkDownloadingService) handleDownloadingCheck(ctx context.Context, 
 		slog.Warn("[check downloading service] 检查下载超过4小时，标记为不可下载",
 			"hash", data.Torrent.DownloadUID, "elapsed", elapsed)
 		// 更新状态为 4（异常/手动停止下载）
-		data.Torrent.Downloaded = 4
+		data.Torrent.Downloaded = model.DownloadError
 		db := database.GetDB()
 		if err := db.AddTorrentError(ctx, data.Torrent.Link); err != nil {
 			slog.Error("[check downloading service] 更新种子状态失败", "error", err)
@@ -72,7 +72,7 @@ func (cds *checkDownloadingService) handleDownloadingCheck(ctx context.Context, 
 	}
 	// 检查是否下载完成（Completed > 0 表示已完成，为 Unix 时间戳）
 	if info.Completed > 0 { // 下载完成，更新状态为 2
-		data.Torrent.Downloaded = 2
+		data.Torrent.Downloaded = model.DownloadDone
 		db := database.GetDB()
 		if err := db.AddTorrentDownload(ctx, data.Torrent.Link); err != nil {
 			slog.Error("[check downloading service] 更新种子状态失败", "error", err)

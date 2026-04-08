@@ -5,16 +5,24 @@ import (
 	"time"
 )
 
+// DownloadStatus 种子下载状态
+type DownloadStatus int
+
+const (
+	DownloadNone    DownloadStatus = 0 // 未下载
+	DownloadSending DownloadStatus = 1 // 已发送到下载器
+	DownloadDone    DownloadStatus = 2 // 下载完成
+	DownloadError   DownloadStatus = 4 // 异常/手动停止下载
+)
+
 // Torrent 种子信息模型
 // Torrent 什么时候会创建 1. 发送到下载前, 然后下载后更新download 2. 重命名后更新 renamed字段
-// 种子要不要海报数据, 因为可能 collection 里没有
-// Renamed 的含义: 0: 未下载, 1: 发送到下载器 2: 下载完成 4: 异常/手动停止下载
 type Torrent struct {
 	Link         string    `gorm:"primaryKey;column:Link" json:"link"`
 	DownloadUID string    `gorm:"index;column:download_uid" json:"download_uid"`
 	Name        string    `gorm:"default:'';column:name" json:"name"`
 	CreatedAt   time.Time `gorm:"autoCreateTime;index;column:created_at" json:"created_at"`
-	Downloaded  int       `gorm:"default:0;column:downloaded" json:"downloaded"`
+	Downloaded  DownloadStatus `gorm:"default:0;column:downloaded" json:"downloaded"`
 	Renamed     bool      `gorm:"default:false;column:renamed" json:"renamed"`
 	// torrent 属于一个 bangumi
 	BangumiID int    `gorm:"index;column:bangumi_id" json:"bangumi_id"`

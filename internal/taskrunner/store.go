@@ -1,6 +1,7 @@
 package taskrunner
 
 import (
+	"log/slog"
 	"sync"
 
 	"goto-bangumi/internal/model"
@@ -26,6 +27,7 @@ func (s *TaskStore) Add( task *model.Task) bool {
 
 	link := task.Torrent.Link
 	if _, exists := s.tasks[link]; exists {
+		slog.Debug("[TaskStore] 任务已存在，忽略", "link", link)
 		return false
 	}
 	// 构建 cancel 用以单独取消任务

@@ -68,6 +68,7 @@ func (r *TaskRunner) Stop() {
 
 // Submit 提交任务
 func (r *TaskRunner) Submit(task *model.Task) bool {
+	slog.Debug("[taskrunner] 提交任务", "torrent", task.Torrent.Name)
 	if !r.store.Add(task) {
 		return false // 重复任务
 	}
@@ -87,6 +88,7 @@ func (r *TaskRunner) Cancel(link string) {
 
 // dispatcher 从队列取任务，为每个任务启动 goroutine
 func (r *TaskRunner) dispatcher(ctx context.Context) {
+	slog.Info("[taskrunner] 任务执行器已启动")
 	defer r.wg.Done()
 	for {
 		select {
