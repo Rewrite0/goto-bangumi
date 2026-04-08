@@ -59,9 +59,10 @@ func (p *Program) Start(ctx context.Context) {
 
 	// 创建并启动 taskrunner
 	runner := taskrunner.New(taskrunner.DefaultConfig())
-	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(), true)
-	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(), true)
-	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(), false)
+	runner.Register(model.PhaseAdding, handlers.NewAddHandler(), true)          // 唯一受限阶段
+	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(), false)     // 轻量查询
+	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(), false) // 轻量轮询
+	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(), false)    // 本地文件操作
 	runner.Start(p.ctx)
 
 	// 启动调度器
