@@ -1,7 +1,7 @@
 package refresh
 
 import (
-	// "os"
+	"context"
 	"testing"
 
 	"goto-bangumi/internal/database"
@@ -66,7 +66,7 @@ func TestFilter_torrent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FilterTorrent(&tt.torrent, &tt.bangumi)
+			result := FilterTorrent(&tt.torrent, tt.bangumi.IncludeFilter, tt.bangumi.ExcludeFilter)
 			if result != tt.expected {
 				t.Errorf("Filter_torrent() = %v, want %v,torrent name %s", result, tt.expected, tt.torrent.Name)
 			}
@@ -140,7 +140,7 @@ func TestTorrentToBangumi(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotBangumi,err := TorrentToBangumi(&tt.torrent, tt.rss.Link)
+			gotBangumi,err := TorrentToBangumi(context.Background(), &tt.torrent, tt.rss.Link)
 			if err != nil {
 				t.Errorf("TorrentToBangumi() error = %v, want nil", err)
 				return
@@ -203,9 +203,13 @@ func TestCreateBangumi(t *testing.T) {
 		Homepage: "https://mikanani.me/Home/Episode/7c8c41e409922d9f2c34a726c92e77daf05558ff",
 	}
 	rssLink := "https://mikanani.me/RSS/Search?searchstr=ANI"
+	rssItem := &model.RSSItem{
+		Name: "ANI",
+		Link: rssLink,
+	}
 
 	// 调用被测函数
-	createBangumi(db, torrent, rssLink)
+	createBangumi(context.Background(), db, torrent, rssItem)
 
 	// 验证数据库中是否创建了番剧
 	bangumi, err := db.GetBangumiByOfficialTitle("弹珠汽水瓶里的千岁同学")

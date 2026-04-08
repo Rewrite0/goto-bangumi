@@ -59,6 +59,20 @@ var tmdbInfo253811 []byte
 //go:embed testdata/tmdb_info_87478.json
 var tmdbInfo87478 []byte
 
+// RefreshRSS 测试数据 - 败犬女主太多了！(bangumiId=3391, subgroupid=370)
+//
+//go:embed testdata/rss_bangumi_3391.xml
+var rssBangumi3391XML []byte
+
+//go:embed testdata/mikan_3391.html
+var mikan3391HTML []byte
+
+//go:embed testdata/tmdb_search_makeine.json
+var tmdbSearchMakeine []byte
+
+//go:embed testdata/tmdb_info_241535.json
+var tmdbInfo241535 []byte
+
 // TestMain 设置所有测试缓存
 func TestMain(m *testing.M) {
 	// 设置 RSS 缓存
@@ -90,6 +104,31 @@ func TestMain(m *testing.M) {
 	network.SetTestCache(parser.InfoURL(282662, "zh"), tmdbInfo282662) // 跨越种族与你相恋
 	network.SetTestCache(parser.InfoURL(253811, "zh"), tmdbInfo253811) // 桃源暗鬼
 	network.SetTestCache(parser.InfoURL(87478, "zh"), tmdbInfo87478)   // 异世界四重奏
+
+	// RefreshRSS 测试缓存 - 败犬女主太多了！
+	rss3391URL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=370"
+	network.SetTestCache(rss3391URL, rssBangumi3391XML)
+	// 所有 episode homepage 都指向同一个 bangumi 页面
+	mikan3391Episodes := []string{
+		"https://mikanani.me/Home/Episode/0651a36393eabaf6aee48624efc951983ebd3156",
+		"https://mikanani.me/Home/Episode/ab30a8030a43ea333b25cc7fb564e33c1b09d5c8",
+		"https://mikanani.me/Home/Episode/3285b4c9b3e7e67b68735005d2aa7c8e616c6331",
+		"https://mikanani.me/Home/Episode/b7c2cd13372843a2559bba8d28581a5fbda53df6",
+		"https://mikanani.me/Home/Episode/285d970a6b37211a81fe771fc9b002f049d4a16f",
+		"https://mikanani.me/Home/Episode/a45d447ac2fc9bfbe0222b8c1123fa6ce3b590d8",
+		"https://mikanani.me/Home/Episode/7cc27cb89b4f8912f86534452cf2e5a9cc3edeef",
+		"https://mikanani.me/Home/Episode/d0b03f509efab8b1d78c1a83fa691c08d11142d8",
+		"https://mikanani.me/Home/Episode/fc525e63fad30a985c13aa821c047e7e49be213c",
+		"https://mikanani.me/Home/Episode/12604df10b2adda2f93538c55240404273eb4c69",
+		"https://mikanani.me/Home/Episode/a93c8f4a7af75992a0ad998d91ad731ab582dc57",
+		"https://mikanani.me/Home/Episode/5fd113dfa16dc2deac01be447bdf7fa96e1608be",
+		"https://mikanani.me/Home/Episode/098f3e982c9d9326f4095dcb118f0f4ce6a1e758",
+	}
+	for _, ep := range mikan3391Episodes {
+		network.SetTestCache(ep, mikan3391HTML)
+	}
+	network.SetTestCache(parser.SearchURL("败犬女主太多了！"), tmdbSearchMakeine)
+	network.SetTestCache(parser.InfoURL(241535, "zh"), tmdbInfo241535)
 
 	code := m.Run()
 	os.Exit(code)
