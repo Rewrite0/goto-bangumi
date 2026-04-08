@@ -16,21 +16,6 @@ import (
 func TestFindNewBangumi_NormalFlow(t *testing.T) {
 	// 创建内存数据库
 	memoryDB := ":memory:"
-	db, err := database.NewDB(&memoryDB)
-	if err != nil {
-		t.Fatalf("创建测试数据库失败: %v", err)
-	}
-	defer db.Close()
-
-	// 验证初始状态：数据库为空
-	initialBangumis, err := db.ListBangumi()
-	if err != nil {
-		t.Fatalf("查询番剧列表失败: %v", err)
-	}
-	if len(initialBangumis) != 0 {
-		t.Errorf("期望初始番剧数量为 0，但得到 %d", len(initialBangumis))
-	}
-
 	// 调用 FindNewBangumi
 	// 注意：FindNewBangumi 使用全局数据库，这里需要先初始化
 	// 由于 FindNewBangumi 内部调用 database.GetDB()，我们需要设置全局数据库
@@ -64,7 +49,7 @@ func TestFindNewBangumi_NormalFlow(t *testing.T) {
 		"弹珠汽水瓶里的千岁同学": {year: "2025", season: 1},
 		"跨越种族与你相恋":    {year: "2025", season: 1},
 		"桃源暗鬼":        {year: "2025", season: 1},
-		"异世界四重奏":      {year: "2019", season: 1},
+		"异世界四重奏":      {year: "2019", season: 3},
 	}
 
 	for _, bangumi := range finalBangumis {

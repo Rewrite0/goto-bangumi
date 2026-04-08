@@ -95,6 +95,7 @@ func FilterTorrent(torrent *model.Torrent,include string,exclude string) bool {
 			slog.Debug("[FilterTorrent] 通过包含过滤", "种子名称", torrent.Name, "匹配正则", includePattern)
 			return true
 		}
+		return false
 	}
 	slog.Debug("[FilterTorrent] 通过", "种子名称", torrent.Name)
 	return true

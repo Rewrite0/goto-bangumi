@@ -53,7 +53,7 @@ func TestFilter_torrent(t *testing.T) {
 			bangumi: model.Bangumi{
 				IncludeFilter: "1080p,meow",
 			},
-			expected: true,
+			expected: false,
 		},
 		{
 			name: "include empty",
