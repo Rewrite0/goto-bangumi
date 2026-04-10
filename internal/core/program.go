@@ -65,7 +65,7 @@ func (p *Program) Start(ctx context.Context) {
 	// 创建并启动 taskrunner
 	renamer := rename.New(p.db)
 	refresher := refresh.New(p.db)
-	runner := taskrunner.New(64, 4)
+	runner := taskrunner.New(4, 5)
 	runner.Register(model.PhaseAdding, handlers.NewAddHandler())                        // 唯一受限阶段（持有流水线槽位）
 	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(p.db))                // 轻量查询
 	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(p.db))       // 轻量轮询

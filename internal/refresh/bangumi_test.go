@@ -197,7 +197,7 @@ func TestRefreshRSS(t *testing.T) {
 	}
 
 	// 4. 创建 TaskRunner 并调用 RefreshRSS
-	runner := taskrunner.New(64, 2)
+	runner := taskrunner.New(4, 5)
 	// 注册一个空的 handler，让 submit 能成功
 	runner.Register(model.PhaseAdding, func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		return taskrunner.PhaseResult{}
