@@ -31,8 +31,7 @@ func main() {
 		<-c
 		cancel()
 	}()
-	core.InitProgram(ctx)
-	program := core.Program{}
+	program := core.InitProgram(ctx)
 	program.Start(ctx)
 	<-ctx.Done()
 	// 启动 API 服务器（阻塞）

@@ -262,7 +262,8 @@ func TestGetBangumi(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bangumi, err := GetBangumi(context.Background(), tt.torrent)
+			r := New(nil)
+			bangumi, err := r.GetBangumi(context.Background(), tt.torrent)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetBangumi() error = %v, wantErr %v", err, tt.wantErr)

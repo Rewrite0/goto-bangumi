@@ -13,7 +13,7 @@ import (
 )
 
 // NewCheckHandler 创建检查处理器，验证下载是否成功添加到下载器
-func NewCheckHandler() taskrunner.PhaseFunc {
+func NewCheckHandler(db *database.DB) taskrunner.PhaseFunc {
 	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		for _, guid := range task.Guids {
 			trueID, err := download.Client.Check(ctx, guid)
@@ -32,7 +32,7 @@ func NewCheckHandler() taskrunner.PhaseFunc {
 			if trueID != "" {
 				task.Torrent.DownloadUID = trueID
 
-				if err := database.GetDB().AddTorrentDUID(ctx, task.Torrent.Link, trueID); err != nil {
+				if err := db.AddTorrentDUID(ctx, task.Torrent.Link, trueID); err != nil {
 					slog.Error("[check handler] 更新 Torrent DUID 失败", "error", err)
 					return taskrunner.PhaseResult{Err: err}
 				}

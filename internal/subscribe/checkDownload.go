@@ -15,6 +15,7 @@ import (
 
 type CheckService struct {
 	bus eventbus.EventBus
+	db  *database.DB
 }
 
 func (cs *CheckService) Start(ctx context.Context) {
@@ -47,7 +48,7 @@ func (cs *CheckService) Start(ctx context.Context) {
 					if trueID != "" {
 						data.Torrent.DownloadUID = trueID
 						// 存入数据库中
-						if err := database.GetDB().AddTorrentDUID(ctx, data.Torrent.Link, trueID); err != nil {
+						if err := cs.db.AddTorrentDUID(ctx, data.Torrent.Link, trueID); err != nil {
 							slog.Error("[check service] 更新 Torrent DUID 失败:", "error", err)
 							return
 						}

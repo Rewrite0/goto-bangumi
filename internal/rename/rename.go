@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/notification"
@@ -28,15 +29,25 @@ func Init(cfg *model.BangumiRenameConfig) {
 	renameConfig = cfg
 }
 
-func GetBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
-	return getBangumi(ctx, torrent)
+// Renamer 封装重命名相关操作
+type Renamer struct {
+	db *database.DB
 }
 
-func Rename(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi) {
+// New 创建 Renamer 实例
+func New(db *database.DB) *Renamer {
+	return &Renamer{db: db}
+}
+
+func (r *Renamer) GetBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
+	return r.getBangumi(ctx, torrent)
+}
+
+func (r *Renamer) Rename(ctx context.Context, torrent *model.Torrent, bangumi *model.Bangumi) {
 	// 如果 bangumi 为空, 则从 torrent 中获取 bangumi 信息
 	if bangumi == nil {
 		var err error
-		bangumi, err = getBangumi(ctx, torrent)
+		bangumi, err = r.getBangumi(ctx, torrent)
 		if err != nil {
 			return
 		}

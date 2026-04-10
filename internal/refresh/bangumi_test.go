@@ -14,27 +14,28 @@ import (
 
 // TestFindNewBangumi_NormalFlow 测试 FindNewBangumi 的正常流程
 func TestFindNewBangumi_NormalFlow(t *testing.T) {
+	t.Parallel()
 	// 创建内存数据库
 	memoryDB := ":memory:"
-	// 调用 FindNewBangumi
-	// 注意：FindNewBangumi 使用全局数据库，这里需要先初始化
-	// 由于 FindNewBangumi 内部调用 database.GetDB()，我们需要设置全局数据库
-	database.InitDB(&memoryDB)
-	defer database.CloseDB()
+	db, err := database.NewDB(&memoryDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
 
 	rssURL := "https://mikanani.me/RSS/MyBangumi?token=test"
 	rssItem := &model.RSSItem{
 		Name: "我的番组",
 		Link: rssURL,
 	}
-	FindNewBangumi(context.Background(), rssItem)
+	r := New(db)
+	r.FindNewBangumi(context.Background(), rssItem)
 
 	// 等待 goroutine 完成
 	time.Sleep(1 * time.Second)
 
 	// 验证创建的番剧
-	globalDB := database.GetDB()
-	finalBangumis, err := globalDB.ListBangumi()
+	finalBangumis, err := db.ListBangumi()
 	if err != nil {
 		t.Fatalf("查询番剧列表失败: %v", err)
 	}
@@ -78,13 +79,18 @@ func TestFindNewBangumi_NormalFlow(t *testing.T) {
 
 // TestGetTorrents 测试 getTorrents 函数
 func TestGetTorrents(t *testing.T) {
+	t.Parallel()
 	// 初始化内存数据库
 	memoryDB := ":memory:"
-	database.InitDB(&memoryDB)
-	defer database.CloseDB()
+	db, err := database.NewDB(&memoryDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
 
 	rssURL := "https://mikanani.me/RSS/MyBangumi?token=test"
-	torrents := getTorrents(context.Background(), rssURL)
+	r := New(db)
+	torrents := r.getTorrents(context.Background(), rssURL)
 
 	// 验证返回的种子数量
 	if len(torrents) == 0 {
@@ -107,27 +113,31 @@ func TestGetTorrents(t *testing.T) {
 
 // TestGetTorrents_WithExisting 测试 getTorrents 过滤已存在种子
 func TestGetTorrents_WithExisting(t *testing.T) {
+	t.Parallel()
 	memoryDB := ":memory:"
-	database.InitDB(&memoryDB)
-	defer database.CloseDB()
+	db, err := database.NewDB(&memoryDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
 
 	rssURL := "https://mikanani.me/RSS/MyBangumi?token=test"
 
 	ctx := context.Background()
 
+	r := New(db)
 	// 第一次获取
-	firstTorrents := getTorrents(ctx, rssURL)
+	firstTorrents := r.getTorrents(ctx, rssURL)
 	if len(firstTorrents) == 0 {
 		t.Fatal("第一次获取种子失败")
 	}
 
 	// 将第一个种子标记为已下载
-	db := database.GetDB()
 	firstTorrents[0].Downloaded = model.DownloadSending
 	db.CreateTorrent(ctx, firstTorrents[0])
 
 	// 第二次获取，应该少一个
-	secondTorrents := getTorrents(ctx, rssURL)
+	secondTorrents := r.getTorrents(ctx, rssURL)
 	if len(secondTorrents) != len(firstTorrents)-1 {
 		t.Errorf("期望 %d 个种子，实际 %d 个", len(firstTorrents)-1, len(secondTorrents))
 	}
@@ -138,6 +148,7 @@ func TestGetTorrents_WithExisting(t *testing.T) {
 // 番剧: 败犬女主太多了！ (13 条种子: 1 条合集 + 12 集单集)
 // 排除: 合集
 func TestRefreshRSS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// 设置 parser config，让 FindNewBangumi 创建的 bangumi 带上 exclude filter
@@ -149,9 +160,11 @@ func TestRefreshRSS(t *testing.T) {
 
 	// 1. 初始化内存数据库
 	memoryDB := ":memory:"
-	database.InitDB(&memoryDB)
-	defer database.CloseDB()
-	db := database.GetDB()
+	db, err := database.NewDB(&memoryDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
 
 	// 2. 创建 RSS 订阅
 	rssURL := "https://mikanani.me/RSS/Bangumi?bangumiId=3391&subgroupid=370"
@@ -165,8 +178,10 @@ func TestRefreshRSS(t *testing.T) {
 		t.Fatalf("创建 RSS 失败: %v", err)
 	}
 
+	r := New(db)
+
 	// 3. 调用 FindNewBangumi 发现新番并创建 Bangumi + EpisodeMetadata
-	FindNewBangumi(ctx, rssItem)
+	r.FindNewBangumi(ctx, rssItem)
 
 	// 验证 bangumi 已创建
 	bangumis, err := db.ListBangumi()
@@ -190,7 +205,7 @@ func TestRefreshRSS(t *testing.T) {
 	runner.Start(ctx)
 	defer runner.Stop()
 
-	RefreshRSS(ctx, rssURL, runner)
+	r.RefreshRSS(ctx, rssURL, runner)
 
 	// 5. 验证结果
 	// 等待一小段时间让 runner 处理

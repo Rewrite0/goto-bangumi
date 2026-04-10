@@ -6,13 +6,12 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/parser"
 )
 
-func getBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
+func (r *Renamer) getBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
 	// 从 download 中拿到下载文件的目录信息
 	downloadInfo, err := download.Client.GetTorrentInfo(ctx, torrent.DownloadUID)
 	if err != nil {
@@ -34,8 +33,7 @@ func getBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, er
 		return nil, fmt.Errorf("failed to parse path info")
 	}
 	// 去数据库中查找 bangumi 信息
-	db := database.GetDB()
-	bangumi, err := db.GetBangumiByOfficialTitle(pathInfo.BangumiName)
+	bangumi, err := r.db.GetBangumiByOfficialTitle(pathInfo.BangumiName)
 	if err != nil {
 		slog.Debug("[rename] Failed to get bangumi from database", "name", torrent.Name, "bangumiName", pathInfo.BangumiName, "error", err)
 		// 如果没有找到的话,就新建一个 bangumi

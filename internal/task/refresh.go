@@ -15,19 +15,23 @@ import (
 
 // RSSRefreshTask RSS 刷新任务
 type RSSRefreshTask struct {
-	interval time.Duration
-	enabled  bool
-	runner   *taskrunner.TaskRunner
+	interval  time.Duration
+	enabled   bool
+	runner    *taskrunner.TaskRunner
+	db        *database.DB
+	refresher *refresh.Refresher
 }
 
 // NewRSSRefreshTask 创建 RSS 刷新任务
-func NewRSSRefreshTask(programConfig model.ProgramConfig, runner *taskrunner.TaskRunner) *RSSRefreshTask {
+func NewRSSRefreshTask(programConfig model.ProgramConfig, runner *taskrunner.TaskRunner, db *database.DB, refresher *refresh.Refresher) *RSSRefreshTask {
 	interval := programConfig.RssTime
 
 	task := &RSSRefreshTask{
-		interval: time.Duration(interval) * time.Second,
-		enabled:  true,
-		runner:   runner,
+		interval:  time.Duration(interval) * time.Second,
+		enabled:   true,
+		runner:    runner,
+		db:        db,
+		refresher: refresher,
 	}
 
 	slog.Debug("[task rss]创建 RSS 刷新任务", "间隔", task.interval)
@@ -51,9 +55,8 @@ func (t *RSSRefreshTask) Enable() bool {
 
 // Run 执行 RSS 刷新
 func (t *RSSRefreshTask) Run(ctx context.Context) error {
-	db := database.GetDB()
 	// 获取所有启用的 RSS 源
-	rssList, err := db.ListActiveRSS(ctx)
+	rssList, err := t.db.ListActiveRSS(ctx)
 	if err != nil {
 		return fmt.Errorf("[RSS task] 获取 RSS 列表失败: %w", err)
 	}
@@ -67,10 +70,10 @@ func (t *RSSRefreshTask) Run(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			slog.Debug("[refresh] 刷新 RSS 源", "名称", rss.Name, "URL", rss.Link)
-			refresh.FindNewBangumi(ctx, rss);
+			t.refresher.FindNewBangumi(ctx, rss)
 
 			// 调用 refresh 模块的刷新方法
-			refresh.RefreshRSS(ctx, rss.Link, t.runner)
+			t.refresher.RefreshRSS(ctx, rss.Link, t.runner)
 
 			// 为了避免短时间内请求过多，每个 RSS 源之间间隔一点时间
 			time.Sleep(2 * time.Second)
