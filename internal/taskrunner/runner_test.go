@@ -3,7 +3,6 @@ package taskrunner
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,16 +32,29 @@ func successHandler() (PhaseFunc, *atomic.Int32) {
 	}, &count
 }
 
+// helper: 等待条件满足或超时
+func waitFor(t *testing.T, timeout time.Duration, condition func() bool, msg string) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for !condition() {
+		select {
+		case <-deadline:
+			t.Fatal(msg)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
 func TestNew_DirectParams(t *testing.T) {
-	runner := New(16, 2)
+	runner := New(8, 5)
 	if runner == nil {
 		t.Fatal("New should return non-nil runner")
 	}
-	if cap(runner.queue) != 16 {
-		t.Errorf("queue cap = %d, want 16", cap(runner.queue))
+	if runner.maxConcurrency != 8 {
+		t.Errorf("maxConcurrency = %d, want 8", runner.maxConcurrency)
 	}
-	if cap(runner.addingSem) != 2 {
-		t.Errorf("addingSem cap = %d, want 2", cap(runner.addingSem))
+	if runner.maxDownload != 5 {
+		t.Errorf("maxDownload = %d, want 5", runner.maxDownload)
 	}
 }
 
@@ -52,7 +64,7 @@ func TestHappyPath_AllPhasesComplete(t *testing.T) {
 	dlHandler, dlCount := successHandler()
 	renameHandler, renameCount := successHandler()
 
-	runner := New(16, 2)
+	runner := New(4, 5)
 	runner.Register(model.PhaseAdding, addHandler)
 	runner.Register(model.PhaseChecking, checkHandler)
 	runner.Register(model.PhaseDownloading, dlHandler)
@@ -68,17 +80,9 @@ func TestHappyPath_AllPhasesComplete(t *testing.T) {
 		t.Fatal("Submit should succeed")
 	}
 
-	deadline := time.After(3 * time.Second)
-	for {
-		if runner.Store().Get("magnet:happy") == nil {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("task did not complete within deadline")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	waitFor(t, 3*time.Second, func() bool {
+		return runner.Get("magnet:happy") == nil
+	}, "task did not complete within deadline")
 
 	if v := addCount.Load(); v != 1 {
 		t.Errorf("add handler called %d times, want 1", v)
@@ -96,8 +100,6 @@ func TestHappyPath_AllPhasesComplete(t *testing.T) {
 	if task.Phase != model.PhaseEnd {
 		t.Errorf("task phase = %v, want PhaseEnd", task.Phase)
 	}
-
-	// 槽位应已释放
 	if task.HoldingSlot {
 		t.Error("task should not be holding slot after completion")
 	}
@@ -112,7 +114,7 @@ func TestHandlerError_TaskFails(t *testing.T) {
 	}
 	dlHandler, dlCount := successHandler()
 
-	runner := New(16, 2)
+	runner := New(4, 5)
 	runner.Register(model.PhaseAdding, addHandler)
 	runner.Register(model.PhaseChecking, failHandler)
 	runner.Register(model.PhaseDownloading, dlHandler)
@@ -124,17 +126,9 @@ func TestHandlerError_TaskFails(t *testing.T) {
 	task := newTestTask("magnet:fail")
 	runner.Submit(task)
 
-	deadline := time.After(3 * time.Second)
-	for {
-		if runner.Store().Get("magnet:fail") == nil {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("failed task was not removed from store")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	waitFor(t, 3*time.Second, func() bool {
+		return runner.Get("magnet:fail") == nil
+	}, "failed task was not removed")
 
 	if task.Phase != model.PhaseFailed {
 		t.Errorf("task phase = %v, want PhaseFailed", task.Phase)
@@ -145,7 +139,6 @@ func TestHandlerError_TaskFails(t *testing.T) {
 	if v := dlCount.Load(); v != 0 {
 		t.Errorf("download handler called %d times, want 0", v)
 	}
-	// 槽位应已释放（即使任务失败）
 	if task.HoldingSlot {
 		t.Error("task should not be holding slot after failure")
 	}
@@ -164,7 +157,7 @@ func TestPollAfter_ReEnqueuesTask(t *testing.T) {
 	}
 	renameHandler, _ := successHandler()
 
-	runner := New(16, 2)
+	runner := New(4, 5)
 	runner.Register(model.PhaseAdding, addHandler)
 	runner.Register(model.PhaseDownloading, pollHandler)
 	runner.Register(model.PhaseRenaming, renameHandler)
@@ -174,20 +167,11 @@ func TestPollAfter_ReEnqueuesTask(t *testing.T) {
 	defer runner.Stop()
 
 	task := newTestTask("magnet:poll")
-
 	runner.Submit(task)
 
-	deadline := time.After(3 * time.Second)
-	for {
-		if runner.Store().Get("magnet:poll") == nil {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("task did not complete within deadline")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	waitFor(t, 3*time.Second, func() bool {
+		return runner.Get("magnet:poll") == nil
+	}, "task did not complete within deadline")
 
 	if v := pollCount.Load(); v != 3 {
 		t.Errorf("poll handler called %d times, want 3", v)
@@ -204,7 +188,7 @@ func TestDuplicateSubmit_Rejected(t *testing.T) {
 		return PhaseResult{}
 	}
 
-	runner := New(16, 2)
+	runner := New(4, 5)
 	runner.Register(model.PhaseAdding, blockHandler)
 
 	ctx := context.Background()
@@ -236,7 +220,7 @@ func TestCancel_RemovesFromStore(t *testing.T) {
 		return PhaseResult{}
 	}
 
-	runner := New(16, 2)
+	runner := New(4, 5)
 	runner.Register(model.PhaseAdding, blockHandler)
 
 	ctx := context.Background()
@@ -249,35 +233,25 @@ func TestCancel_RemovesFromStore(t *testing.T) {
 	task := newTestTask("magnet:cancel")
 	runner.Submit(task)
 
-	deadline := time.After(3 * time.Second)
-	for called.Load() == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("handler was never called")
-		case <-time.After(1 * time.Millisecond):
-		}
-	}
+	waitFor(t, 3*time.Second, func() bool {
+		return called.Load() > 0
+	}, "handler was never called")
 
 	runner.Cancel("magnet:cancel")
 
-	if runner.Store().Get("magnet:cancel") != nil {
-		t.Error("task should be removed from store after Cancel")
+	if runner.Get("magnet:cancel") != nil {
+		t.Error("task should be removed after Cancel")
 	}
 }
 
-func TestPipelineSlot_LimitsConcurrency(t *testing.T) {
+func TestMaxConcurrency_Limits(t *testing.T) {
 	const maxConcurrency = 2
 	const totalTasks = 5
 
 	var concurrent atomic.Int32
 	var maxSeen atomic.Int32
-	var wg sync.WaitGroup
-	wg.Add(totalTasks)
+	doneCh := make(chan struct{})
 
-	// Adding handler 立即成功
-	addHandler, _ := successHandler()
-
-	// Downloading handler 模拟耗时操作，用于测量并发
 	slowHandler := func(ctx context.Context, task *model.Task) PhaseResult {
 		cur := concurrent.Add(1)
 		for {
@@ -286,50 +260,165 @@ func TestPipelineSlot_LimitsConcurrency(t *testing.T) {
 				break
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		<-doneCh
 		concurrent.Add(-1)
-		wg.Done()
 		return PhaseResult{}
 	}
 
-	runner := New(64, maxConcurrency)
-	runner.Register(model.PhaseAdding, addHandler)
-	runner.Register(model.PhaseDownloading, slowHandler)
+	runner := New(maxConcurrency, 10) // maxDownload 很大，不限制
+	runner.Register(model.PhaseAdding, slowHandler)
 
 	ctx := context.Background()
 	runner.Start(ctx)
 	defer runner.Stop()
 
 	for i := 0; i < totalTasks; i++ {
-		task := newTestTask("magnet:sem-" + string(rune('a'+i)))
+		task := newTestTask("magnet:conc-" + string(rune('a'+i)))
 		runner.Submit(task)
 	}
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
+	// 等待并发达到 maxConcurrency
+	waitFor(t, 3*time.Second, func() bool {
+		return concurrent.Load() >= int32(maxConcurrency)
+	}, "concurrent tasks did not reach maxConcurrency")
 
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("tasks did not complete within deadline")
-	}
+	// 给一点时间确保不会超过限制
+	time.Sleep(50 * time.Millisecond)
 
-	// 因为槽位从 Adding 持有到 PhaseEnd，同时在流水线中的任务不超过 maxConcurrency
 	if v := maxSeen.Load(); v > int32(maxConcurrency) {
 		t.Errorf("max concurrent = %d, want <= %d", v, maxConcurrency)
 	}
-	if v := maxSeen.Load(); v < int32(maxConcurrency) {
-		t.Logf("warning: max concurrent = %d, expected %d (may be flaky on slow CI)", v, maxConcurrency)
+
+	close(doneCh)
+}
+
+func TestDownloadSlot_Limits(t *testing.T) {
+	const maxDownload = 2
+	const totalTasks = 5
+
+	var concurrent atomic.Int32
+	var maxSeen atomic.Int32
+	doneCh := make(chan struct{})
+
+	slowAddHandler := func(ctx context.Context, task *model.Task) PhaseResult {
+		cur := concurrent.Add(1)
+		for {
+			old := maxSeen.Load()
+			if cur <= old || maxSeen.CompareAndSwap(old, cur) {
+				break
+			}
+		}
+		<-doneCh
+		concurrent.Add(-1)
+		return PhaseResult{}
 	}
+
+	runner := New(10, maxDownload) // maxConcurrency 很大，不限制
+	runner.Register(model.PhaseAdding, slowAddHandler)
+
+	ctx := context.Background()
+	runner.Start(ctx)
+	defer runner.Stop()
+
+	for i := 0; i < totalTasks; i++ {
+		task := newTestTask("magnet:dl-" + string(rune('a'+i)))
+		runner.Submit(task)
+	}
+
+	waitFor(t, 3*time.Second, func() bool {
+		return concurrent.Load() >= int32(maxDownload)
+	}, "concurrent download tasks did not reach maxDownload")
+
+	time.Sleep(50 * time.Millisecond)
+
+	if v := maxSeen.Load(); v > int32(maxDownload) {
+		t.Errorf("max concurrent downloads = %d, want <= %d", v, maxDownload)
+	}
+
+	close(doneCh)
+}
+
+func TestRenaming_NotBlockedByDownloadSlots(t *testing.T) {
+	// 下载槽位满时，Renaming 任务仍能执行
+	const maxDownload = 1
+
+	blockCh := make(chan struct{})
+	var renameCalled atomic.Int32
+
+	blockAddHandler := func(ctx context.Context, task *model.Task) PhaseResult {
+		<-blockCh
+		return PhaseResult{}
+	}
+	renameHandler := func(ctx context.Context, task *model.Task) PhaseResult {
+		renameCalled.Add(1)
+		return PhaseResult{}
+	}
+
+	runner := New(4, maxDownload)
+	runner.Register(model.PhaseAdding, blockAddHandler)
+	runner.Register(model.PhaseRenaming, renameHandler)
+
+	ctx := context.Background()
+	runner.Start(ctx)
+	defer func() {
+		close(blockCh)
+		runner.Stop()
+	}()
+
+	// 提交一个 Adding 任务占满下载槽位
+	addTask := newTestTask("magnet:block-add")
+	runner.Submit(addTask)
+
+	// 等待 Adding handler 开始执行（槽位被占）
+	time.Sleep(50 * time.Millisecond)
+
+	// 提交一个 Renaming 任务
+	renameTask := model.NewRenameTask(
+		&model.Torrent{Link: "magnet:rename-only", Name: "test-rename"},
+		&model.Bangumi{},
+	)
+	runner.Submit(renameTask)
+
+	// Renaming 任务应该不被下载槽位阻塞
+	waitFor(t, 3*time.Second, func() bool {
+		return renameCalled.Load() > 0
+	}, "rename task was blocked by full download slots")
+}
+
+func TestReleaseSlot_OnFailure(t *testing.T) {
+	addHandler, _ := successHandler()
+
+	var failCount atomic.Int32
+	failThenSucceed := func(ctx context.Context, task *model.Task) PhaseResult {
+		n := failCount.Add(1)
+		if n <= 2 {
+			return PhaseResult{Err: errors.New("fail")}
+		}
+		return PhaseResult{}
+	}
+
+	runner := New(4, 1) // 只有 1 个下载槽位
+	runner.Register(model.PhaseAdding, addHandler)
+	runner.Register(model.PhaseChecking, failThenSucceed)
+
+	ctx := context.Background()
+	runner.Start(ctx)
+	defer runner.Stop()
+
+	for i := 0; i < 3; i++ {
+		task := newTestTask("magnet:release-" + string(rune('a'+i)))
+		runner.Submit(task)
+	}
+
+	waitFor(t, 5*time.Second, func() bool {
+		return failCount.Load() >= 3
+	}, "not all tasks processed — slot may not be released on failure")
 }
 
 func TestNewRenameTask_SkipsToRenamePhase(t *testing.T) {
 	renameHandler, renameCount := successHandler()
 
-	runner := New(16, 2)
+	runner := New(4, 5)
 	runner.Register(model.PhaseAdding, func(ctx context.Context, task *model.Task) PhaseResult {
 		t.Error("add handler should not be called for rename task")
 		return PhaseResult{}
@@ -357,14 +446,9 @@ func TestNewRenameTask_SkipsToRenamePhase(t *testing.T) {
 		t.Fatal("Submit should succeed")
 	}
 
-	deadline := time.After(3 * time.Second)
-	for runner.Store().Get("magnet:rename-only") != nil {
-		select {
-		case <-deadline:
-			t.Fatal("task did not complete within deadline")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	waitFor(t, 3*time.Second, func() bool {
+		return runner.Get("magnet:rename-only") == nil
+	}, "task did not complete within deadline")
 
 	if v := renameCount.Load(); v != 1 {
 		t.Errorf("rename handler called %d times, want 1", v)
@@ -377,40 +461,59 @@ func TestNewRenameTask_SkipsToRenamePhase(t *testing.T) {
 	}
 }
 
-func TestReleaseSlot_OnFailure(t *testing.T) {
-	// 验证任务失败时槽位被正确释放，不会死锁后续任务
-	addHandler, _ := successHandler()
+func TestPollAfter_KeepsDownloadSlot(t *testing.T) {
+	const maxDownload = 1
+	var addConcurrent atomic.Int32
 
-	var failCount atomic.Int32
-	failThenSucceed := func(ctx context.Context, task *model.Task) PhaseResult {
-		n := failCount.Add(1)
-		if n <= 2 {
-			return PhaseResult{Err: errors.New("fail")}
+	addHandler, _ := successHandler()
+	checkHandler, _ := successHandler()
+
+	var pollCount atomic.Int32
+	pollHandler := func(ctx context.Context, task *model.Task) PhaseResult {
+		n := pollCount.Add(1)
+		if n < 3 {
+			return PhaseResult{PollAfter: 10 * time.Millisecond}
 		}
 		return PhaseResult{}
 	}
+	renameHandler, _ := successHandler()
 
-	runner := New(16, 1) // 只有1个槽位
-	runner.Register(model.PhaseAdding, addHandler)
-	runner.Register(model.PhaseChecking, failThenSucceed)
+	// 第二个任务的 Adding handler 记录是否同时执行
+	addHandler2 := func(ctx context.Context, task *model.Task) PhaseResult {
+		addConcurrent.Add(1)
+		return PhaseResult{}
+	}
+
+	runner := New(4, maxDownload)
+	runner.Register(model.PhaseAdding, func(ctx context.Context, task *model.Task) PhaseResult {
+		if task.Torrent.Link == "magnet:poll-slot" {
+			return addHandler(ctx, task)
+		}
+		return addHandler2(ctx, task)
+	})
+	runner.Register(model.PhaseChecking, checkHandler)
+	runner.Register(model.PhaseDownloading, pollHandler)
+	runner.Register(model.PhaseRenaming, renameHandler)
 
 	ctx := context.Background()
 	runner.Start(ctx)
 	defer runner.Stop()
 
-	// 提交3个任务，前2个会在 checking 阶段失败，第3个成功
-	for i := 0; i < 3; i++ {
-		task := newTestTask("magnet:release-" + string(rune('a'+i)))
-		runner.Submit(task)
-	}
+	// 第一个任务会在 Downloading 阶段 poll 3 次
+	task1 := newTestTask("magnet:poll-slot")
+	runner.Submit(task1)
 
-	// 如果槽位没有正确释放，只有1个槽位会导致后续任务永远拿不到槽位
-	deadline := time.After(5 * time.Second)
-	for failCount.Load() < 3 {
-		select {
-		case <-deadline:
-			t.Fatalf("only %d tasks processed, expected 3 — slot may not be released on failure", failCount.Load())
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	// 第二个任务也需要下载槽位
+	task2 := newTestTask("magnet:blocked")
+	runner.Submit(task2)
+
+	// 等待第一个任务完成
+	waitFor(t, 3*time.Second, func() bool {
+		return runner.Get("magnet:poll-slot") == nil
+	}, "first task did not complete")
+
+	// 第二个任务的 Adding 应该在第一个任务释放槽位后才执行
+	waitFor(t, 3*time.Second, func() bool {
+		return runner.Get("magnet:blocked") == nil
+	}, "second task did not complete")
 }
