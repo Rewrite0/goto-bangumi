@@ -50,6 +50,7 @@ type Task struct {
 	Phase TaskPhase
 
 	HoldingSlot bool // 是否持有流水线槽位
+	RetryCount  int  // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）
 
 	// 业务数据
 	Guids     []string  // 可能的 hash 列表

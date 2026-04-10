@@ -296,6 +296,9 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 	}
 
 	if result.PollAfter > 0 {
+		task.Mu.Lock()
+		task.RetryCount++
+		task.Mu.Unlock()
 		// 延迟重入队列，goroutine 立即结束（finish 在 defer 中）
 		time.AfterFunc(result.PollAfter, func() {
 			if ctx.Err() == nil {
@@ -315,6 +318,7 @@ func (r *TaskRunner) advance(ctx context.Context, task *model.Task) {
 	oldPhase := task.Phase
 	nextPhase := r.nextPhase(task.Phase)
 	task.Phase = nextPhase
+	task.RetryCount = 0
 	task.Mu.Unlock()
 
 	if nextPhase == model.PhaseEnd {
