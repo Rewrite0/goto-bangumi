@@ -12,6 +12,7 @@ import (
 	"goto-bangumi/internal/network"
 	"goto-bangumi/internal/notification"
 	"goto-bangumi/internal/parser"
+	"goto-bangumi/internal/refresh"
 	"goto-bangumi/internal/rename"
 	"goto-bangumi/internal/scheduler"
 	"goto-bangumi/internal/task"
@@ -25,9 +26,10 @@ type Program struct {
 	// 这里可以添加程序的全局状态和配置
 	ctx    context.Context
 	cancel context.CancelFunc
+	db     *database.DB
 }
 
-func InitProgram(ctx context.Context) {
+func InitProgram(ctx context.Context) *Program {
 	// Load config
 	if err := conf.Init(); err != nil {
 		slog.Error("[program] 加载配置文件失败", "error", err)
@@ -40,7 +42,8 @@ func InitProgram(ctx context.Context) {
 	logger.Init(cfg.Program.DebugEnable)
 
 	// Initialize database
-	if err := database.InitDB(nil); err != nil {
+	db, err := database.NewDB(nil)
+	if err != nil {
 		slog.Error("[program] 初始化数据库失败", "error", err)
 		panic(err)
 	}
@@ -51,6 +54,8 @@ func InitProgram(ctx context.Context) {
 	notification.NotificationClient.Init(&cfg.Notification)
 	download.Client.Init(&cfg.Downloader)
 	rename.Init(&cfg.Rename)
+
+	return &Program{db: db}
 }
 
 func (p *Program) Start(ctx context.Context) {
@@ -58,24 +63,31 @@ func (p *Program) Start(ctx context.Context) {
 	go download.Client.Login(p.ctx)
 
 	// 创建并启动 taskrunner
+	renamer := rename.New(p.db)
+	refresher := refresh.New(p.db)
 	runner := taskrunner.New(64, 4)
-	runner.Register(model.PhaseAdding, handlers.NewAddHandler())       // 唯一受限阶段（持有流水线槽位）
-	runner.Register(model.PhaseChecking, handlers.NewCheckHandler())   // 轻量查询
-	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler()) // 轻量轮询
-	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler())  // 本地文件操作
+	runner.Register(model.PhaseAdding, handlers.NewAddHandler())                        // 唯一受限阶段（持有流水线槽位）
+	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(p.db))                // 轻量查询
+	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(p.db))       // 轻量轮询
+	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(p.db, renamer))      // 本地文件操作
 	runner.Start(p.ctx)
 
 	// 启动调度器
-	InitScheduler(p.ctx, runner)
+	InitScheduler(p.ctx, runner, p.db, refresher)
 }
 
 func (p *Program) Stop() {
 	p.cancel()
+	if p.db != nil {
+		if err := p.db.Close(); err != nil {
+			slog.Error("[program] 关闭数据库失败", "error", err)
+		}
+	}
 	slog.Info("程序已停止")
 }
 
 // InitScheduler 初始化并启动调度器
-func InitScheduler(ctx context.Context, runner *taskrunner.TaskRunner) {
+func InitScheduler(ctx context.Context, runner *taskrunner.TaskRunner, db *database.DB, refresher *refresh.Refresher) {
 	scheduler.InitScheduler(ctx)
 
 	s := scheduler.GetScheduler()
@@ -84,7 +96,7 @@ func InitScheduler(ctx context.Context, runner *taskrunner.TaskRunner) {
 		return
 	}
 
-	s.AddTask(task.NewRSSRefreshTask(conf.Get().Program, runner))
+	s.AddTask(task.NewRSSRefreshTask(conf.Get().Program, runner, db, refresher))
 
 	s.Start()
 

@@ -12,7 +12,9 @@ import (
 
 // renameService 处理重命名事件
 type renameService struct {
-	bus eventbus.EventBus
+	bus    eventbus.EventBus
+	db     *database.DB
+	renamer *rename.Renamer
 }
 
 // handleRename 处理单个重命名事件
@@ -20,11 +22,10 @@ func (rs *renameService) handleRename(ctx context.Context, data model.RenameEven
 	slog.Info("[rename service] 收到重命名事件", "torrent", data.Torrent.Name, "bangumi", data.Bangumi.OfficialTitle)
 
 	// 调用 rename 模块进行重命名
-	rename.Rename(ctx, data.Torrent, data.Bangumi)
+	rs.renamer.Rename(ctx, data.Torrent, data.Bangumi)
 
 	// 更新数据库状态为已重命名
-	db := database.GetDB()
-	if err := db.TorrentRenamed(ctx, data.Torrent.Link); err != nil {
+	if err := rs.db.TorrentRenamed(ctx, data.Torrent.Link); err != nil {
 		slog.Error("[rename service] 更新种子重命名状态失败", "error", err, "link", data.Torrent.Link)
 		return
 	}

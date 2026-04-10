@@ -209,7 +209,8 @@ func TestCreateBangumi(t *testing.T) {
 	}
 
 	// 调用被测函数
-	createBangumi(context.Background(), db, torrent, rssItem)
+	r := &Refresher{db: db}
+	r.createBangumi(context.Background(), torrent, rssItem)
 
 	// 验证数据库中是否创建了番剧
 	bangumi, err := db.GetBangumiByOfficialTitle("弹珠汽水瓶里的千岁同学")

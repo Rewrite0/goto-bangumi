@@ -19,9 +19,6 @@ type DB struct {
 	*gorm.DB
 }
 
-// 全局数据库实例（单例模式）
-var globalDB *DB
-
 // NewDB 创建数据库连接
 // dsn 为 nil 时使用默认路径，传入 ":memory:" 可创建内存数据库
 func NewDB(dsn *string) (*DB, error) {
@@ -69,41 +66,6 @@ func (db *DB) Close() error {
 	}
 	return sqlDB.Close()
 }
-
-// ============ 单例模式相关方法 ============
-
-// InitDB 初始化全局数据库实例
-// 不同的地址主要是为了测试方便,正常使用是不用的
-func InitDB(dsn *string) error {
-	if globalDB != nil {
-		return nil // 已经初始化，直接返回
-	}
-	db, err := NewDB(dsn)
-	if err != nil {
-		return err
-	}
-	globalDB = db
-	return nil
-}
-
-// GetDB 获取全局数据库实例
-func GetDB() *DB {
-	if globalDB == nil {
-		InitDB(nil)
-	}
-	return globalDB
-}
-
-// CloseDB 关闭全局数据库连接
-func CloseDB() error {
-	if globalDB != nil {
-		err := globalDB.Close()
-		globalDB = nil
-		return err
-	}
-	return nil
-}
-
 
 // ============ Torrent 相关方法 ============
 

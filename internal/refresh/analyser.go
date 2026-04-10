@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"goto-bangumi/internal/apperrors"
-	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/parser"
 )
@@ -132,7 +131,7 @@ func TorrentToBangumi(ctx context.Context, torrent *model.Torrent, rssLink strin
 	return bangumi, nil
 }
 
-func createBangumi(ctx context.Context, db *database.DB, torrent *model.Torrent, rssItem *model.RSSItem) {
+func (r *Refresher) createBangumi(ctx context.Context, torrent *model.Torrent, rssItem *model.RSSItem) {
 	bangumi, err := TorrentToBangumi(ctx, torrent, rssItem.Link)
 	if err != nil && apperrors.IsNetworkError(err) {
 		slog.Warn("[createBangumi] 网络错误，跳过该番剧的添加", "种子名称", torrent.Name, "error", err)
@@ -148,7 +147,7 @@ func createBangumi(ctx context.Context, db *database.DB, torrent *model.Torrent,
 		// }
 		// 对 bangumi 进行处理，要看看有没有相同的 bangumi 项
 		// 有相同的就只更新metadata
-		if err := db.CreateBangumi(bangumi); err != nil {
+		if err := r.db.CreateBangumi(bangumi); err != nil {
 			slog.Error("[createBangumi] 创建番剧失败", "种子名称", torrent.Name, "error", err)
 		}
 	}

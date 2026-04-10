@@ -11,15 +11,15 @@ import (
 )
 
 // NewRenameHandler 创建重命名处理器
-func NewRenameHandler() taskrunner.PhaseFunc {
+func NewRenameHandler(db *database.DB, renamer *rename.Renamer) taskrunner.PhaseFunc {
 	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		slog.Info("[rename handler] 开始重命名",
 			"torrent", task.Torrent.Name,
 			"bangumi", task.Bangumi.OfficialTitle)
 
-		rename.Rename(ctx, task.Torrent, task.Bangumi)
+		renamer.Rename(ctx, task.Torrent, task.Bangumi)
 
-		if err := database.GetDB().TorrentRenamed(ctx, task.Torrent.Link); err != nil {
+		if err := db.TorrentRenamed(ctx, task.Torrent.Link); err != nil {
 			slog.Error("[rename handler] 更新种子重命名状态失败",
 				"error", err, "link", task.Torrent.Link)
 			return taskrunner.PhaseResult{Err: err}
