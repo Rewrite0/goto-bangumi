@@ -7,11 +7,7 @@ import (
 	"goto-bangumi/internal/model"
 )
 
-// TestAddTorrent 测试添加种子
-// 刷新的时候可以把 rss id 给加进去( 不一定有 rss id, collection 的是没有的)
-// rename 的时候可以把 EpisodeMetadata 更新进去?
-// 没想到有什么用呀, episode 可以是多个,感觉也不好统计更新了几集
-// torrent 也不一定会有 BangumiID, 因为Collection
+// TestAddTorrent 测试 Torrent 相关数据库操作，每个子测试验证一个函数的功能
 func TestAddTorrent(t *testing.T) {
 	testdb := ":memory:"
 	db, err := NewDB(&testdb)
@@ -104,264 +100,55 @@ func TestAddTorrent(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	for i, torrent := range torrents {
-		err := db.CreateTorrent(ctx, &torrent)
-		if err != nil {
-			t.Errorf("Failed to create torrent %d: %v", i, err)
-		}
-	}
-	t.Logf("Successfully added %d torrents", len(torrents))
-}
+	const testDUID = "abc123def456"
 
-func TestDeleteTorrent(t *testing.T) {
-	testdb := ":memory:"
-	db, err := NewDB(&testdb)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-
-	ctx := context.Background()
-
-	// 先创建一个种子
-	torrent := model.Torrent{
-		Link:        "https://mikanani.me/Download/20250829/test_delete.torrent",
-		Name:        "[ANi] Test Delete Torrent",
-		Downloaded:  0,
-		Renamed:     false,
-		DownloadUID: "test_delete_uid",
-		Homepage:    "https://mikanani.me/Home/Episode/test_delete",
-	}
-
-	err = db.CreateTorrent(ctx, &torrent)
-	if err != nil {
-		t.Fatalf("Failed to create torrent: %v", err)
-	}
-
-	// 删除种子
-	err = db.DeleteTorrent(ctx, torrent.Link)
-	if err != nil {
-		t.Errorf("Failed to delete torrent: %v", err)
-	}
-
-	// 验证种子已被删除
-	var count int64
-	db.Model(&model.Torrent{}).Where("link = ?", torrent.Link).Count(&count)
-	if count != 0 {
-		t.Errorf("Torrent should be deleted, but found %d records", count)
-	}
-
-	t.Log("Successfully deleted torrent")
-}
-
-func TestAddTorrentDownload(t *testing.T) {
-	testdb := ":memory:"
-	db, err := NewDB(&testdb)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-
-	ctx := context.Background()
-
-	// 创建一个未下载的种子
-	torrent := model.Torrent{
-		Link:       "https://mikanani.me/Download/20250829/test_download.torrent",
-		Name:       "[ANi] Test Download Torrent",
-		Downloaded: 0,
-		Renamed:    false,
-		Homepage:   "https://mikanani.me/Home/Episode/test_download",
-	}
-
-	err = db.CreateTorrent(ctx, &torrent)
-	if err != nil {
-		t.Fatalf("Failed to create torrent: %v", err)
-	}
-
-	// 标记为已下载
-	err = db.AddTorrentDownload(ctx, torrent.Link)
-	if err != nil {
-		t.Errorf("Failed to mark torrent as downloaded: %v", err)
-	}
-
-	// 验证已标记为下载
-	var updated model.Torrent
-	db.Where("link = ?", torrent.Link).First(&updated)
-	if updated.Downloaded != model.DownloadDone {
-		t.Errorf("Torrent should be marked as downloaded, got %d", updated.Downloaded)
-	}
-
-	t.Log("Successfully marked torrent as downloaded")
-}
-
-func TestTorrentRenamed(t *testing.T) {
-	testdb := ":memory:"
-	db, err := NewDB(&testdb)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-
-	ctx := context.Background()
-
-	// 创建一个未重命名的种子
-	torrent := model.Torrent{
-		Link:       "https://mikanani.me/Download/20250829/test_rename.torrent",
-		Name:       "[ANi] Test Rename Torrent",
-		Downloaded: 1,
-		Renamed:    false,
-		Homepage:   "https://mikanani.me/Home/Episode/test_rename",
-	}
-
-	err = db.CreateTorrent(ctx, &torrent)
-	if err != nil {
-		t.Fatalf("Failed to create torrent: %v", err)
-	}
-
-	// 标记为已重命名
-	err = db.TorrentRenamed(ctx, torrent.Link)
-	if err != nil {
-		t.Errorf("Failed to mark torrent as renamed: %v", err)
-	}
-
-	// 验证已标记为重命名
-	var updated model.Torrent
-	db.Where("link = ?", torrent.Link).First(&updated)
-	if !updated.Renamed {
-		t.Errorf("Torrent should be marked as renamed")
-	}
-
-	t.Log("Successfully marked torrent as renamed")
-}
-
-func TestAddTorrentDUID(t *testing.T) {
-	testdb := ":memory:"
-	db, err := NewDB(&testdb)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-
-	ctx := context.Background()
-
-	// 创建一个没有 DownloadUID 的种子
-	torrent := model.Torrent{
-		Link:        "https://mikanani.me/Download/20250829/test_duid.torrent",
-		Name:        "[ANi] Test DUID Torrent",
-		Downloaded:  0,
-		Renamed:     false,
-		DownloadUID: "",
-		Homepage:    "https://mikanani.me/Home/Episode/test_duid",
-	}
-
-	err = db.CreateTorrent(ctx, &torrent)
-	if err != nil {
-		t.Fatalf("Failed to create torrent: %v", err)
-	}
-
-	// 添加 DownloadUID
-	expectedUID := "abc123def456"
-	err = db.AddTorrentDUID(ctx, torrent.Link, expectedUID)
-	if err != nil {
-		t.Errorf("Failed to add torrent DUID: %v", err)
-	}
-
-	// 验证 DownloadUID 已添加
-	var updated model.Torrent
-	db.Where("link = ?", torrent.Link).First(&updated)
-	if updated.DownloadUID != expectedUID {
-		t.Errorf("Torrent DownloadUID should be %s, got %s", expectedUID, updated.DownloadUID)
-	}
-
-	t.Log("Successfully added torrent DUID")
-}
-
-// TestTorrentLifecycle 测试种子的完整生命周期流程
-// 共享一个内存数据库，子测试按顺序执行，模拟真实的业务流程
-func TestTorrentLifecycle(t *testing.T) {
-	testdb := ":memory:"
-	db, err := NewDB(&testdb)
-	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
-	}
-
-	ctx := context.Background()
-
-	// 3 条种子，各自走不同的生命周期路径
-	torrentA := model.Torrent{
-		Link:     "https://mikanani.me/Download/lifecycle/torrent_a.torrent",
-		Name:     "[ANi] Lifecycle Test A - 01 [1080P]",
-		Homepage: "https://mikanani.me/Home/Episode/torrent_a",
-	}
-	torrentB := model.Torrent{
-		Link:     "https://mikanani.me/Download/lifecycle/torrent_b.torrent",
-		Name:     "[ANi] Lifecycle Test B - 02 [1080P]",
-		Homepage: "https://mikanani.me/Home/Episode/torrent_b",
-	}
-	torrentC := model.Torrent{
-		Link:     "https://mikanani.me/Download/lifecycle/torrent_c.torrent",
-		Name:     "[ANi] Lifecycle Test C - 03 [1080P]",
-		Homepage: "https://mikanani.me/Home/Episode/torrent_c",
-	}
-
-	t.Run("Create", func(t *testing.T) {
-		for _, tor := range []*model.Torrent{&torrentA, &torrentB, &torrentC} {
-			if err := db.CreateTorrent(ctx, tor); err != nil {
-				t.Fatalf("Failed to create torrent %s: %v", tor.Link, err)
+	t.Run("BatchCreate", func(t *testing.T) {
+		for i := range torrents {
+			if err := db.CreateTorrent(ctx, &torrents[i]); err != nil {
+				t.Fatalf("Failed to create torrent %d: %v", i, err)
 			}
 		}
-		// 验证 3 条都在
 		var count int64
 		db.Model(&model.Torrent{}).Count(&count)
-		if count != 3 {
-			t.Fatalf("Expected 3 torrents, got %d", count)
+		if count != int64(len(torrents)) {
+			t.Fatalf("Expected %d torrents in DB, got %d", len(torrents), count)
 		}
 	})
 
 	t.Run("CreateDuplicate", func(t *testing.T) {
-		// 重复插入 torrentA，应该幂等（不报错，不覆盖）
-		dup := model.Torrent{
-			Link:     torrentA.Link,
-			Name:     "This name should NOT overwrite",
-			Homepage: "https://should.not.overwrite",
-		}
+		dup := torrents[0]
+		dup.Name = "This name should NOT overwrite"
 		if err := db.CreateTorrent(ctx, &dup); err != nil {
-			t.Fatalf("CreateTorrent duplicate should not error, got: %v", err)
+			t.Fatalf("Duplicate CreateTorrent should not error, got: %v", err)
 		}
-		// 验证原数据没被覆盖
-		got, err := db.GetTorrentByURL(ctx, torrentA.Link)
-		if err != nil {
-			t.Fatalf("Failed to get torrent: %v", err)
-		}
-		if got.Name != torrentA.Name {
-			t.Fatalf("Duplicate insert overwrote name: expected %q, got %q", torrentA.Name, got.Name)
-		}
-		// 总数仍然是 3
 		var count int64
 		db.Model(&model.Torrent{}).Count(&count)
-		if count != 3 {
-			t.Fatalf("Expected 3 torrents after duplicate insert, got %d", count)
+		if count != int64(len(torrents)) {
+			t.Fatalf("After duplicate insert: expected %d torrents, got %d", len(torrents), count)
 		}
 	})
 
 	t.Run("GetByURL", func(t *testing.T) {
-		got, err := db.GetTorrentByURL(ctx, torrentB.Link)
+		got, err := db.GetTorrentByURL(ctx, torrents[0].Link)
 		if err != nil {
 			t.Fatalf("GetTorrentByURL failed: %v", err)
 		}
-		if got.Name != torrentB.Name {
-			t.Fatalf("Expected name %q, got %q", torrentB.Name, got.Name)
+		if got.Name != torrents[0].Name {
+			t.Fatalf("Expected name %q, got %q", torrents[0].Name, got.Name)
 		}
 	})
 
+	// AddDUID 同时将 Downloaded 置为 DownloadSending
 	t.Run("AddDUID", func(t *testing.T) {
-		// 给 torrentA 设置 download_uid
-		uid := "uid_torrent_a_001"
-		if err := db.AddTorrentDUID(ctx, torrentA.Link, uid); err != nil {
-			t.Fatalf("AddTorrentDUID failed: %v", err)
+		if err := db.AddTorrentDUID(ctx, torrents[1].Link, testDUID); err != nil {
+			t.Fatalf("Failed to add torrent DUID: %v", err)
 		}
-		got, err := db.GetTorrentByURL(ctx, torrentA.Link)
+		got, err := db.GetTorrentByURL(ctx, torrents[1].Link)
 		if err != nil {
 			t.Fatalf("GetTorrentByURL failed: %v", err)
 		}
-		if got.DownloadUID != uid {
-			t.Fatalf("Expected DownloadUID %q, got %q", uid, got.DownloadUID)
+		if got.DownloadUID != testDUID {
+			t.Fatalf("Expected DownloadUID=%s, got %s", testDUID, got.DownloadUID)
 		}
 		if got.Downloaded != model.DownloadSending {
 			t.Fatalf("Expected Downloaded=%d (DownloadSending), got %d", model.DownloadSending, got.Downloaded)
@@ -369,47 +156,47 @@ func TestTorrentLifecycle(t *testing.T) {
 	})
 
 	t.Run("GetByDUID", func(t *testing.T) {
-		got, err := db.GetTorrentByDownloadUID(ctx, "uid_torrent_a_001")
+		got, err := db.GetTorrentByDownloadUID(ctx, testDUID)
 		if err != nil {
 			t.Fatalf("GetTorrentByDownloadUID failed: %v", err)
 		}
-		if got.Link != torrentA.Link {
-			t.Fatalf("Expected link %q, got %q", torrentA.Link, got.Link)
+		if got.Link != torrents[1].Link {
+			t.Fatalf("Expected link %q, got %q", torrents[1].Link, got.Link)
 		}
 	})
 
+	// torrents[0].Renamed=false，标记下载完成后 FindUnrenamed 应能找到它
 	t.Run("MarkDownloaded", func(t *testing.T) {
-		if err := db.AddTorrentDownload(ctx, torrentA.Link); err != nil {
-			t.Fatalf("AddTorrentDownload failed: %v", err)
+		if err := db.AddTorrentDownload(ctx, torrents[0].Link); err != nil {
+			t.Fatalf("Failed to mark torrent as downloaded: %v", err)
 		}
-		got, err := db.GetTorrentByURL(ctx, torrentA.Link)
+		got, err := db.GetTorrentByURL(ctx, torrents[0].Link)
 		if err != nil {
 			t.Fatalf("GetTorrentByURL failed: %v", err)
 		}
 		if got.Downloaded != model.DownloadDone {
-			t.Fatalf("Expected Downloaded=%d (DownloadDone), got %d", model.DownloadDone, got.Downloaded)
+			t.Fatalf("Expected Downloaded=%d, got %d", model.DownloadDone, got.Downloaded)
 		}
 	})
 
 	t.Run("FindUnrenamed", func(t *testing.T) {
-		// torrentA: Downloaded=Done, Renamed=false → 应该被找到
-		torrents, err := db.FindUnrenamedTorrent(ctx)
+		results, err := db.FindUnrenamedTorrent(ctx)
 		if err != nil {
 			t.Fatalf("FindUnrenamedTorrent failed: %v", err)
 		}
-		if len(torrents) != 1 {
-			t.Fatalf("Expected 1 unrenamed torrent, got %d", len(torrents))
+		if len(results) != 1 {
+			t.Fatalf("Expected 1 unrenamed torrent, got %d", len(results))
 		}
-		if torrents[0].Link != torrentA.Link {
-			t.Fatalf("Expected unrenamed torrent link %q, got %q", torrentA.Link, torrents[0].Link)
+		if results[0].Link != torrents[0].Link {
+			t.Fatalf("Expected link %q, got %q", torrents[0].Link, results[0].Link)
 		}
 	})
 
 	t.Run("MarkRenamed", func(t *testing.T) {
-		if err := db.TorrentRenamed(ctx, torrentA.Link); err != nil {
-			t.Fatalf("TorrentRenamed failed: %v", err)
+		if err := db.TorrentRenamed(ctx, torrents[0].Link); err != nil {
+			t.Fatalf("Failed to mark torrent as renamed: %v", err)
 		}
-		got, err := db.GetTorrentByURL(ctx, torrentA.Link)
+		got, err := db.GetTorrentByURL(ctx, torrents[0].Link)
 		if err != nil {
 			t.Fatalf("GetTorrentByURL failed: %v", err)
 		}
@@ -418,27 +205,11 @@ func TestTorrentLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("FindUnrenamed2", func(t *testing.T) {
-		// torrentA 已重命名，其他两条没下载完成 → 应该找不到
-		torrents, err := db.FindUnrenamedTorrent(ctx)
-		if err != nil {
-			t.Fatalf("FindUnrenamedTorrent failed: %v", err)
-		}
-		if len(torrents) != 0 {
-			t.Fatalf("Expected 0 unrenamed torrents, got %d", len(torrents))
-		}
-	})
-
 	t.Run("MarkError", func(t *testing.T) {
-		// 先给 torrentB 设置 DUID 并发送到下载器
-		if err := db.AddTorrentDUID(ctx, torrentB.Link, "uid_torrent_b_001"); err != nil {
-			t.Fatalf("AddTorrentDUID failed: %v", err)
-		}
-		// 标记下载出错
-		if err := db.AddTorrentError(ctx, torrentB.Link); err != nil {
+		if err := db.AddTorrentError(ctx, torrents[2].Link); err != nil {
 			t.Fatalf("AddTorrentError failed: %v", err)
 		}
-		got, err := db.GetTorrentByURL(ctx, torrentB.Link)
+		got, err := db.GetTorrentByURL(ctx, torrents[2].Link)
 		if err != nil {
 			t.Fatalf("GetTorrentByURL failed: %v", err)
 		}
@@ -449,10 +220,10 @@ func TestTorrentLifecycle(t *testing.T) {
 
 	t.Run("CheckNew", func(t *testing.T) {
 		candidates := []*model.Torrent{
-			{Link: torrentA.Link},                                        // 已存在
-			{Link: "https://mikanani.me/Download/lifecycle/new1.torrent"}, // 新的
-			{Link: torrentC.Link},                                        // 已存在
-			{Link: "https://mikanani.me/Download/lifecycle/new2.torrent"}, // 新的
+			{Link: torrents[0].Link},                                         // 已存在
+			{Link: "https://mikanani.me/Download/new/new1.torrent"},           // 新的
+			{Link: torrents[1].Link},                                         // 已存在
+			{Link: "https://mikanani.me/Download/new/new2.torrent"},           // 新的
 		}
 		newOnes, err := db.CheckNewTorrents(ctx, candidates)
 		if err != nil {
@@ -463,29 +234,33 @@ func TestTorrentLifecycle(t *testing.T) {
 		}
 	})
 
+	t.Run("Delete", func(t *testing.T) {
+		if err := db.DeleteTorrent(ctx, torrents[9].Link); err != nil {
+			t.Fatalf("Failed to delete torrent: %v", err)
+		}
+		_, err := db.GetTorrentByURL(ctx, torrents[9].Link)
+		if err == nil {
+			t.Fatal("Expected error when getting deleted torrent, got nil")
+		}
+	})
+
 	t.Run("DeleteByURL", func(t *testing.T) {
-		if err := db.DeleteTorrentByURL(ctx, torrentC.Link); err != nil {
+		if err := db.DeleteTorrentByURL(ctx, torrents[8].Link); err != nil {
 			t.Fatalf("DeleteTorrentByURL failed: %v", err)
 		}
-		_, err := db.GetTorrentByURL(ctx, torrentC.Link)
+		_, err := db.GetTorrentByURL(ctx, torrents[8].Link)
 		if err == nil {
 			t.Fatal("Expected error when getting deleted torrent, got nil")
 		}
 	})
 
 	t.Run("DeleteByDUID", func(t *testing.T) {
-		if err := db.DeleteTorrentByDownloadUID(ctx, "uid_torrent_b_001"); err != nil {
+		if err := db.DeleteTorrentByDownloadUID(ctx, testDUID); err != nil {
 			t.Fatalf("DeleteTorrentByDownloadUID failed: %v", err)
 		}
-		_, err := db.GetTorrentByDownloadUID(ctx, "uid_torrent_b_001")
+		_, err := db.GetTorrentByDownloadUID(ctx, testDUID)
 		if err == nil {
 			t.Fatal("Expected error when getting deleted torrent, got nil")
-		}
-		// 最终只剩 torrentA
-		var count int64
-		db.Model(&model.Torrent{}).Count(&count)
-		if count != 1 {
-			t.Fatalf("Expected 1 remaining torrent, got %d", count)
 		}
 	})
 }

@@ -81,6 +81,13 @@ type EpisodeMetadata struct {
 	Point5       bool   `gorm:"-;comment:'是否为0.5集'"`
 }
 
+// Key 返回用于去重的唯一标识，包含除主键和外键外的所有持久化字段
+func (e EpisodeMetadata) Key() string {
+	return fmt.Sprintf("%s|%d|%s|%s|%s|%s|%s|%s|%s|%s",
+		e.Title, e.Season, e.SeasonRaw, e.Sub, e.SubType,
+		e.Group, e.Resolution, e.Source, e.AudioInfo, e.VideoInfo)
+}
+
 // String 式化输出
 func (e EpisodeMetadata) String() string {
 	return "Title: " + e.Title +

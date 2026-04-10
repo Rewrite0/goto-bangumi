@@ -16,6 +16,7 @@ var bangumiCreateMutex sync.Mutex
 
 // CreateBangumi 创建番剧
 func (db *DB) CreateBangumi(bangumi *model.Bangumi) error {
+	slog.Info("[database] 创建番剧", "标题", bangumi.OfficialTitle, "MikanID", bangumi.MikanID, "TmdbID", bangumi.TmdbID)
 	// 加锁防止并发创建重复的 Bangumi
 	bangumiCreateMutex.Lock()
 	defer bangumiCreateMutex.Unlock()
@@ -43,6 +44,7 @@ func (db *DB) CreateBangumi(bangumi *model.Bangumi) error {
 		Where("mikan_id = ?", mikanID).
 		Or("tmdb_id = ?", tmdbID).First(&oldBangumi).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
+		slog.Info("[database] 查找番剧时出错", "错误", err)
 		return err
 	}
 	if oldBangumi.ID != 0 {
@@ -54,10 +56,19 @@ func (db *DB) CreateBangumi(bangumi *model.Bangumi) error {
 		if oldBangumi.TmdbID == nil && bangumi.TmdbItem != nil {
 			oldBangumi.TmdbItem = bangumi.TmdbItem
 		}
-		// FIXME: 这里会重复添加, 要改改
-		oldBangumi.EpisodeMetadata = bangumi.EpisodeMetadata
+		// 只追加不存在的 EpisodeMetadata
+		existingKeys := make(map[string]struct{}, len(oldBangumi.EpisodeMetadata))
+		for _, e := range oldBangumi.EpisodeMetadata {
+			existingKeys[e.Key()] = struct{}{}
+		}
+		for _, e := range bangumi.EpisodeMetadata {
+			if _, ok := existingKeys[e.Key()]; !ok {
+				oldBangumi.EpisodeMetadata = append(oldBangumi.EpisodeMetadata, e)
+			}
+		}
 		return db.Save(&oldBangumi).Error
 	}
+	slog.Info("[database] 番剧不存在，创建新记录", "标题", bangumi.OfficialTitle)
 	return db.Save(bangumi).Error
 }
 
