@@ -27,13 +27,16 @@ type DownloadClient struct {
 	// 登录控制
 	logined    bool // 是否已登录
 	LoginError bool // 登录错误通道
+	loginGroup singleflight.Group
 }
 
-// Client 为一个全局的下载客户端实例
-var Client = &DownloadClient{}
+// Client 为一个全局的下载客户端实例（将在 DI 改造完成后删除）
+var Client = NewDownloadClient()
 
-// loginGroup 确保同一时间只有一个登录协程
-var loginGroup singleflight.Group
+// NewDownloadClient 创建下载客户端实例
+func NewDownloadClient() *DownloadClient {
+	return &DownloadClient{}
+}
 
 func (c *DownloadClient) Init(config *model.DownloaderConfig) {
 	c.SavePath = config.SavePath
@@ -69,7 +72,7 @@ func (c *DownloadClient) Check(ctx context.Context, hash string) (string, error)
 // Login 登录（使用 singleflight 确保同一时间只有一个登录协程）
 // 如果是网络错误，自动重试；如果是认证错误，等待外部重新请求
 func (c *DownloadClient) Login(ctx context.Context) error {
-	_, err, _ := loginGroup.Do("login", func() (any, error) {
+	_, err, _ := c.loginGroup.Do("login", func() (any, error) {
 		_, err := c.Downloader.Auth(ctx)
 		if apperrors.IsDownloadAuthenticationError(err) || apperrors.IsDownloadForbiddenError(err) {
 			c.LoginError = true
