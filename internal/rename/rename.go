@@ -31,12 +31,13 @@ func Init(cfg *model.BangumiRenameConfig) {
 
 // Renamer 封装重命名相关操作
 type Renamer struct {
-	db *database.DB
+	db         *database.DB
+	downloader *download.DownloadClient
 }
 
 // New 创建 Renamer 实例
-func New(db *database.DB) *Renamer {
-	return &Renamer{db: db}
+func New(db *database.DB, dl *download.DownloadClient) *Renamer {
+	return &Renamer{db: db, downloader: dl}
 }
 
 func (r *Renamer) GetBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
@@ -52,7 +53,7 @@ func (r *Renamer) Rename(ctx context.Context, torrent *model.Torrent, bangumi *m
 			return
 		}
 	}
-	fileList, err := download.Client.GetTorrentFiles(ctx, torrent.DownloadUID)
+	fileList, err := r.downloader.GetTorrentFiles(ctx, torrent.DownloadUID)
 	if err != nil {
 		return
 	}
@@ -73,7 +74,7 @@ func (r *Renamer) Rename(ctx context.Context, torrent *model.Torrent, bangumi *m
 
 		// 也不用想着要加速什么的, 慢慢来就好了, 主要的还是 api 调用的时间
 		// err := rename(ctx, torrent.DownloadUID, filePath, newPath)
-		if err := download.Client.Rename(ctx, torrent.DownloadUID, filePath, newPath); err != nil {
+		if err := r.downloader.Rename(ctx, torrent.DownloadUID, filePath, newPath); err != nil {
 			slog.Error("[rename] Failed to rename file", "oldpath", filePath, "newpath", newPath, "error", err)
 			return
 		}

@@ -6,14 +6,13 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/parser"
 )
 
 func (r *Renamer) getBangumi(ctx context.Context, torrent *model.Torrent) (*model.Bangumi, error) {
 	// 从 download 中拿到下载文件的目录信息
-	downloadInfo, err := download.Client.GetTorrentInfo(ctx, torrent.DownloadUID)
+	downloadInfo, err := r.downloader.GetTorrentInfo(ctx, torrent.DownloadUID)
 	if err != nil {
 		slog.Error("[rename] Failed to get torrent download info", "name", torrent.Name, "error", err)
 		return nil, err
@@ -21,7 +20,7 @@ func (r *Renamer) getBangumi(ctx context.Context, torrent *model.Torrent) (*mode
 	savePath := downloadInfo.SavePath
 	// 从 savePath 提取出 bangumi 的名字和季度 以及 可能存在的年份 组成为 savePath/BangumiName (Year)/Season \d
 	// 首先提取一个相对路径, 拿到最后的 BangumiName (Year)/Season \d, 以 download.Client.SavePath 为基准
-	relativePath, err := filepath.Rel(download.Client.SavePath, savePath)
+	relativePath, err := filepath.Rel(r.downloader.SavePath, savePath)
 	if err != nil {
 		slog.Error("[rename] Failed to get relative path", "name", torrent.Name, "path", savePath, "error", err)
 		return nil, err
