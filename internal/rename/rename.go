@@ -2,13 +2,14 @@ package rename
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strconv"
 
 	"goto-bangumi/internal/database"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
+	"goto-bangumi/internal/network"
 	"goto-bangumi/internal/notification"
 	"goto-bangumi/internal/parser"
 )
@@ -80,14 +81,21 @@ func (r *Renamer) Rename(ctx context.Context, torrent *model.Torrent, bangumi *m
 		}
 
 		// 发送改名成功通知
-		Nclient := notification.NotificationClient
-		msg := &model.Message{
-			Title:      bangumi.OfficialTitle,
-			Season:     strconv.Itoa(bangumi.Season),
-			Episode:    strconv.Itoa(metaInfo.Episode),
-			PosterLink: bangumi.PosterLink,
+		text := fmt.Sprintf("番剧名称：%s\n季度：第%d季\n更新集数：第%d集",
+			bangumi.OfficialTitle, bangumi.Season, metaInfo.Episode)
+
+		var image []byte
+		if bangumi.PosterLink != "" {
+			image, err = network.LoadImage(ctx, bangumi.PosterLink)
+			if err != nil {
+				slog.Error("[rename] Failed to download poster", "error", err)
+			}
 		}
-		Nclient.Send(ctx, msg)
+
+		notification.NotificationClient.Send(ctx, &notification.Message{
+			Text:  text,
+			Image: image,
+		})
 	}
 }
 
