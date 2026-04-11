@@ -30,9 +30,6 @@ type DownloadClient struct {
 	loginGroup singleflight.Group
 }
 
-// Client 为一个全局的下载客户端实例（将在 DI 改造完成后删除）
-var Client = NewDownloadClient()
-
 // NewDownloadClient 创建下载客户端实例
 func NewDownloadClient() *DownloadClient {
 	return &DownloadClient{}

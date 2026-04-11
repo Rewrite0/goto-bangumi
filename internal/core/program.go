@@ -23,10 +23,10 @@ import (
 // 先实现一下整体的初使化
 
 type Program struct {
-	// 这里可以添加程序的全局状态和配置
-	ctx    context.Context
-	cancel context.CancelFunc
-	db     *database.DB
+	ctx        context.Context
+	cancel     context.CancelFunc
+	db         *database.DB
+	downloader *download.DownloadClient
 }
 
 func InitProgram(ctx context.Context) *Program {
@@ -52,23 +52,25 @@ func InitProgram(ctx context.Context) *Program {
 	network.Init(&cfg.Proxy)
 	parser.Init(&cfg.Parser)
 	notification.NotificationClient.Init(&cfg.Notification)
-	download.Client.Init(&cfg.Downloader)
 	rename.Init(&cfg.Rename)
 
-	return &Program{db: db}
+	downloader := download.NewDownloadClient()
+	downloader.Init(&cfg.Downloader)
+
+	return &Program{db: db, downloader: downloader}
 }
 
 func (p *Program) Start(ctx context.Context) {
 	p.ctx, p.cancel = context.WithCancel(ctx)
-	go download.Client.Login(p.ctx)
+	go p.downloader.Login(p.ctx)
 
 	// 创建并启动 taskrunner
-	renamer := rename.New(p.db)
+	renamer := rename.New(p.db, p.downloader)
 	refresher := refresh.New(p.db)
 	runner := taskrunner.New(4, 5)
-	runner.Register(model.PhaseAdding, handlers.NewAddHandler())                        // 唯一受限阶段（持有流水线槽位）
-	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(p.db))                // 轻量查询
-	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(p.db))       // 轻量轮询
+	runner.Register(model.PhaseAdding, handlers.NewAddHandler(p.downloader))                        // 唯一受限阶段（持有流水线槽位）
+	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(p.db, p.downloader))                // 轻量查询
+	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(p.db, p.downloader))       // 轻量轮询
 	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(p.db, renamer))      // 本地文件操作
 	runner.Start(p.ctx)
 
