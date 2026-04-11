@@ -32,9 +32,17 @@ func (r *Renamer) getBangumi(ctx context.Context, torrent *model.Torrent) (*mode
 		return nil, fmt.Errorf("failed to parse path info")
 	}
 	// 去数据库中查找 bangumi 信息
-	bangumi, err := r.db.GetBangumiByOfficialTitle(pathInfo.BangumiName)
-	if err != nil {
-		slog.Debug("[rename] Failed to get bangumi from database", "name", torrent.Name, "bangumiName", pathInfo.BangumiName, "error", err)
+	var bangumi *model.Bangumi
+	if r.db != nil {
+		var err error
+		bangumi, err = r.db.GetBangumiByOfficialTitle(pathInfo.BangumiName)
+		if err != nil {
+			slog.Debug("[rename] Failed to get bangumi from database", "name", torrent.Name, "bangumiName", pathInfo.BangumiName, "error", err)
+			// 如果没有找到的话,就新建一个 bangumi
+			bangumi = nil
+		}
+	}
+	if bangumi == nil {
 		// 如果没有找到的话,就新建一个 bangumi
 		bangumi = &model.Bangumi{
 			OfficialTitle: pathInfo.BangumiName,
