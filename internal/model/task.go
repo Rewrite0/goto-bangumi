@@ -50,6 +50,7 @@ type Task struct {
 	Phase TaskPhase
 
 	HoldingSlot bool // 是否持有流水线槽位
+	SlotExpired bool // 槽位已超时释放，不再竞争新槽位
 	RetryCount  int  // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）
 
 	// 业务数据
@@ -65,10 +66,9 @@ type Task struct {
 // NewAddTask 创建下载任务（从 PhaseAdding 开始）
 func NewAddTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
-		Phase:     PhaseAdding,
-		StartTime: time.Now(),
-		Torrent:   torrent,
-		Bangumi:   bangumi,
+		Phase:   PhaseAdding,
+		Torrent: torrent,
+		Bangumi: bangumi,
 	}
 }
 

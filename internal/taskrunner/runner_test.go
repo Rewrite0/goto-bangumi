@@ -18,8 +18,7 @@ func newTestTask(link string) *model.Task {
 			Link: link,
 			Name: "test-" + link,
 		},
-		Bangumi:   &model.Bangumi{},
-		StartTime: time.Now(),
+		Bangumi: &model.Bangumi{},
 	}
 }
 
@@ -144,6 +143,7 @@ func TestHandlerError_TaskFails(t *testing.T) {
 	}
 }
 
+// TestPollAfter_ReEnqueuesTask 验证 PollAfter 会重新入队并继续处理
 func TestPollAfter_ReEnqueuesTask(t *testing.T) {
 	var pollCount atomic.Int32
 
@@ -181,6 +181,7 @@ func TestPollAfter_ReEnqueuesTask(t *testing.T) {
 	}
 }
 
+// TestDuplicateSubmit_Rejected 验证提交重复链接的任务会被拒绝
 func TestDuplicateSubmit_Rejected(t *testing.T) {
 	blockCh := make(chan struct{})
 	blockHandler := func(ctx context.Context, task *model.Task) PhaseResult {
@@ -208,6 +209,11 @@ func TestDuplicateSubmit_Rejected(t *testing.T) {
 	ok2 := runner.Submit(task2)
 	if ok2 {
 		t.Error("duplicate Submit should return false")
+	}
+	// 验证里面只有一个任务
+	n := len( runner.downloadQueue)
+	if n != 1 {
+		t.Errorf("expected 1 task in queue, got %d", n)
 	}
 }
 

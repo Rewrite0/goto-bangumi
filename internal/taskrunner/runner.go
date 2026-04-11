@@ -28,8 +28,9 @@ type TaskRunner struct {
 	downloadSlots int                    // 当前持有下载槽位的任务数
 
 	// 配置
-	maxConcurrency int // 总并发上限
-	maxDownload    int // 下载槽位上限
+	maxConcurrency int           // 总并发上限
+	maxDownload    int           // 下载槽位上限
+	slotTimeout    time.Duration // 下载槽位最大持有时间
 
 	// 控制
 	signal chan struct{} // buffer 1，唤醒 scheduler
@@ -49,6 +50,7 @@ func New(maxConcurrency, maxDownload int) *TaskRunner {
 		tasks:          make(map[string]*model.Task),
 		maxConcurrency: maxConcurrency,
 		maxDownload:    maxDownload,
+		slotTimeout:    10 * time.Minute,
 		signal:         make(chan struct{}, 1),
 	}
 }
@@ -79,7 +81,7 @@ func (r *TaskRunner) enqueue(task *model.Task) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if needsDownloadSlot(task.Phase) {
+	if needsDownloadSlot(task.Phase) && (task.HoldingSlot || task.StartTime.IsZero()) {
 		r.downloadQueue = append(r.downloadQueue, task)
 	} else {
 		r.generalQueue = append(r.generalQueue, task)
@@ -249,6 +251,9 @@ func (r *TaskRunner) schedule(ctx context.Context) {
 // dispatch 启动 goroutine 执行任务（调用方必须持有 mu）
 func (r *TaskRunner) dispatch(ctx context.Context, task *model.Task) {
 	r.running++
+	if task.StartTime.IsZero() {
+		task.StartTime = time.Now()
+	}
 	if !task.HoldingSlot && needsDownloadSlot(task.Phase) {
 		r.downloadSlots++
 		task.HoldingSlot = true
@@ -270,6 +275,14 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 			r.releaseSlot(task)
 		}
 		return
+	}
+
+	// 检查下载槽位是否超时
+	if task.HoldingSlot && time.Since(task.StartTime) > r.slotTimeout {
+		slog.Info("[taskrunner] 下载槽位超时，释放槽位",
+			"torrent", task.Torrent.Name,
+			"held", time.Since(task.StartTime))
+		r.releaseSlot(task)
 	}
 
 	entry := r.entryFor(task.Phase)
