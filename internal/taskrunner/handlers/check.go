@@ -13,10 +13,10 @@ import (
 )
 
 // NewCheckHandler 创建检查处理器，验证下载是否成功添加到下载器
-func NewCheckHandler(db *database.DB) taskrunner.PhaseFunc {
+func NewCheckHandler(db *database.DB, dl *download.DownloadClient) taskrunner.PhaseFunc {
 	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		for _, guid := range task.Guids {
-			trueID, err := download.Client.Check(ctx, guid)
+			trueID, err := dl.Check(ctx, guid)
 
 			// GUID 没找到，试下一个
 			if apperrors.IsKeyError(err) {
@@ -25,6 +25,7 @@ func NewCheckHandler(db *database.DB) taskrunner.PhaseFunc {
 
 			if err != nil {
 				slog.Error("[check handler] 检查下载失败", "error", err)
+				//TODO: 如果是网络问题,可以重试
 				return taskrunner.PhaseResult{Err: err}
 			}
 
