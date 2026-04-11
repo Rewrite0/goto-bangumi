@@ -13,7 +13,7 @@ import (
 )
 
 // NewDownloadingHandler 创建下载监控处理器，合并进度检查和 ETA 计算
-func NewDownloadingHandler(db *database.DB) taskrunner.PhaseFunc {
+func NewDownloadingHandler(db *database.DB, dl *download.DownloadClient) taskrunner.PhaseFunc {
 	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		// 检查是否超时（4小时）
 		if time.Since(task.StartTime) > 4*time.Hour {
@@ -27,7 +27,7 @@ func NewDownloadingHandler(db *database.DB) taskrunner.PhaseFunc {
 		}
 
 		// 获取种子信息
-		info, err := download.Client.GetTorrentInfo(ctx, task.Torrent.DownloadUID)
+		info, err := dl.GetTorrentInfo(ctx, task.Torrent.DownloadUID)
 		if err != nil {
 			slog.Error("[downloading handler] 获取种子信息失败",
 				"error", err, "duid", task.Torrent.DownloadUID)
