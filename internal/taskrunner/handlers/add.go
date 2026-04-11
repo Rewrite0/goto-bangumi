@@ -7,20 +7,25 @@ import (
 	"strconv"
 	"time"
 
+	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/download"
 	"goto-bangumi/internal/model"
 	"goto-bangumi/internal/taskrunner"
 )
 
 // NewAddHandler 创建添加下载处理器，将种子添加到下载器
-func NewAddHandler() taskrunner.PhaseFunc {
+func NewAddHandler(dl *download.DownloadClient) taskrunner.PhaseFunc {
 	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		savePath := genSavePath(task.Bangumi)
-		guids, err := download.Client.Add(ctx, task.Torrent.Link, savePath)
+		guids, err := dl.Add(ctx, task.Torrent.Link, savePath)
 		if err != nil {
 			slog.Warn("[add handler] 添加下载失败，稍后重试",
 				"torrent", task.Torrent.Name, "error", err)
-			return taskrunner.PhaseResult{PollAfter: 5 * time.Second}
+			// TODO: 不应一直重试, 一是要有次数的限制, 二是要看是什么错误
+			if apperrors.IsNetworkError(err) {
+				return taskrunner.PhaseResult{PollAfter: 5 * time.Second}
+			}
+			return taskrunner.PhaseResult{Err: err}
 		}
 
 		task.Guids = guids
