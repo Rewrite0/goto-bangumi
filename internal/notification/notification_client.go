@@ -1,4 +1,3 @@
-// Package notification provides functionalities to send notifications via different channels.
 package notification
 
 import (
@@ -6,57 +5,44 @@ import (
 	"log/slog"
 
 	"goto-bangumi/internal/model"
-	"goto-bangumi/internal/network"
 )
 
+// Client wraps a single Notifier selected by configuration.
 type Client struct {
 	notifier Notifier
 }
 
+// NotificationClient is the global notification client.
 var NotificationClient = &Client{}
 
+// Init initializes the notification client with the configured channel.
 func (c *Client) Init(config *model.NotificationConfig) {
-	switch config.Type {
-	case "telegram":
-		c.notifier = NewTelegramNotifier()
-		c.notifier.Init(config)
-	default:
-		slog.Warn("[Notification] Unknown notification type, no notifier initialized", "type", config.Type)
-	}
-}
-
-
-// processMsg 处理为一个统一的发送文字
-func (c *Client) processMsg(ctx context.Context, message *model.Message) {
-	// 如果有集数信息, 那么就是一个更新通知
-	if message.Episode != "" {
-		message.Message = "番剧名称：" + message.Title +
-			"\n季度：第" + message.Season + "季" +
-			"\n更新集数：第" + message.Episode + "集"
-	}
-
-	// 对海报进行处理, 拿到海报的数据
-	if message.PosterLink != "" {
-
-		resp, err := network.LoadImage(ctx, message.PosterLink)
-		if err != nil {
-			slog.Error("[Notification] Failed to download poster image", "error", err)
-			return
-		}
-		message.File = resp
-	}
-}
-
-// Send 发送通知
-func (c *Client) Send(ctx context.Context, message *model.Message) {
-	if c.notifier == nil {
-		slog.Warn("[Notification] No notifier initialized, skipping notification")
+	if !config.Enable {
+		slog.Info("[Notification] Notification disabled")
 		return
 	}
 
-	// 处理消息内容
-	c.processMsg(ctx, message)
-
-	slog.Debug("[Notification] Sending notification", "title", message.Title, "episode", message.Episode)
+	switch config.Type {
+	case "telegram":
+		notifier, err := NewTelegramNotifier(config)
+		if err != nil {
+			slog.Error("[Notification] Failed to init Telegram", "error", err)
+			return
+		}
+		c.notifier = notifier
+	default:
+		slog.Warn("[Notification] Unknown notification type", "type", config.Type)
+	}
 }
 
+// Send sends a notification message. Errors are logged but not returned.
+func (c *Client) Send(ctx context.Context, message *Message) {
+	if c.notifier == nil {
+		slog.Warn("[Notification] No notifier initialized, skipping")
+		return
+	}
+
+	if err := c.notifier.Send(ctx, message); err != nil {
+		slog.Error("[Notification] Send failed", "error", err)
+	}
+}
