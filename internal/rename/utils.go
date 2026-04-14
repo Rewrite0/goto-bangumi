@@ -55,7 +55,7 @@ func (r *Renamer) getBangumi(ctx context.Context, torrent *model.Torrent) (*mode
 
 // GenPath 生成新的文件路径,形如 败犬女主太多了 (2024) S01E02 - Ani.mp4
 func GenPath(torrentName string, bangumi *model.Bangumi) (*model.EpisodeMetadata, string) {
-	metaInfo := parser.NewTitleMetaParse().ParseEpisode(torrentName)
+	metaInfo := parser.NewTitleMetaParse().Parse(torrentName)
 	episode := metaInfo.Episode
 	if episode == -1 {
 		slog.Error("[rename] Failed to parse episode from torrent name", "torrentName", torrentName)

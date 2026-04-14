@@ -255,6 +255,23 @@ func (d *MockDownloader) Move(ctx context.Context, hashes []string, newLocation 
 	return true, nil
 }
 
+// AddMockTorrent 手动添加测试种子数据
+func (d *MockDownloader) AddMockTorrent(hash string, info *model.TorrentDownloadInfo, files []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.torrents[hash] = &mockTorrent{
+		hash: hash,
+		name: hash,
+		info: &model.TorrentDownloadInfo{
+			ETA:       info.ETA,
+			SavePath:  info.SavePath,
+			Completed: info.Completed,
+		},
+		files:      files,
+		queryCount: d.completionThreshold,
+	}
+}
+
 // GetInterval 获取 API 调用间隔
 func (d *MockDownloader) GetInterval() int {
 	return d.APIInterval

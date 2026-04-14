@@ -2,6 +2,7 @@ package apperrors
 
 import "errors"
 
+// DownloadKeyError 不能找到对应的 key
 type DownloadKeyError struct {
 	Err error
 	Key string
@@ -20,6 +21,7 @@ func IsKeyError(err error) bool {
 	return errors.As(err, &keyErr)
 }
 
+// DownloadAuthenticationError 目前没有认证
 type DownloadAuthenticationError struct {
 	Err  error
 	Name string
@@ -38,6 +40,7 @@ func IsDownloadAuthenticationError(err error) bool {
 	return errors.As(err, &authErr)
 }
 
+// DownloadForbiddenError 操作下载器禁止
 type DownloadForbiddenError struct {
 	Err error
 }
@@ -55,6 +58,7 @@ func IsDownloadForbiddenError(err error) bool {
 	return errors.As(err, &forbiddenErr)
 }
 
+// DownloadLoginError 表明当前登录有问题, 不应在短时间内重试, 需要用户检查配置,手动处理
 type DownloadLoginError struct {
 	Err error
 }

@@ -2,6 +2,7 @@ package rename
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"goto-bangumi/internal/download"
@@ -9,274 +10,368 @@ import (
 	"goto-bangumi/internal/model"
 )
 
-func TestGenPath(t *testing.T) {
-	tests := []struct {
-		name        string
-		torrentName string
-		bangumi     *model.Bangumi
-		config      *model.BangumiRenameConfig
-		wantPath    string
-		wantEpisode int
-	}{
-		{
-			name:        "基础情况-只有标题季度集数",
-			torrentName: "[ANi] 败犬女主太多了！ - 02 [1080p][Baha][WEB-DL][AAC AVC][CHT].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "败犬女主太多了",
-				Season:        1,
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  false,
-				Group: false,
-			},
-			wantPath:    "败犬女主太多了 S01E02.mp4",
-			wantEpisode: 2,
-		},
-		{
-			name:        "带年份",
-			torrentName: "[Nekomoe kissaten][Makeine][02][1080p][JPSC].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "败犬女主太多了",
-				Season:        1,
-				Year:          "2024",
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  true,
-				Group: false,
-			},
-			wantPath:    "败犬女主太多了 (2024) S01E02.mp4",
-			wantEpisode: 2,
-		},
-		{
-			name:        "带字幕组",
-			torrentName: "[ANi] 败犬女主太多了！ - 03 [1080p][Baha][WEB-DL][AAC AVC][CHT].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "败犬女主太多了",
-				Season:        1,
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  false,
-				Group: true,
-			},
-			wantPath:    "败犬女主太多了 S01E03 - ANi.mp4",
-			wantEpisode: 3,
-		},
-		{
-			name:        "带年份和字幕组",
-			torrentName: "[ANi] 败犬女主太多了！ - 04 [1080p][Baha][WEB-DL][AAC AVC][CHT].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "败犬女主太多了",
-				Season:        1,
-				Year:          "2024",
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  true,
-				Group: true,
-			},
-			wantPath:    "败犬女主太多了 (2024) S01E04 - ANi.mp4",
-			wantEpisode: 4,
-		},
-		{
-			name:        "带偏移量",
-			torrentName: "[ANi] 败犬女主太多了！ - 02 [1080p].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "败犬女主太多了",
-				Season:        2,
-				Offset:        12,
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  false,
-				Group: false,
-			},
-			wantPath:    "败犬女主太多了 S02E14.mp4",
-			wantEpisode: 2,
-		},
-		{
-			name:        "mkv扩展名",
-			torrentName: "[Nekomoe kissaten][Makeine][05][1080p][JPSC].mkv",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "败犬女主太多了",
-				Season:        1,
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  false,
-				Group: false,
-			},
-			wantPath:    "败犬女主太多了 S01E05.mkv",
-			wantEpisode: 5,
-		},
-		{
-			name:        "两位数集数",
-			torrentName: "[ANi] 海贼王 - 1120 [1080p].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "海贼王",
-				Season:        1,
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  false,
-				Group: false,
-			},
-			wantPath:    "海贼王 S01E1120.mp4",
-			wantEpisode: 1120,
-		},
-		{
-			name:        "年份配置开启但bangumi没有年份",
-			torrentName: "[ANi] 测试番剧 - 01 [1080p].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "测试番剧",
-				Season:        1,
-				Year:          "",
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  true,
-				Group: false,
-			},
-			wantPath:    "测试番剧 S01E01.mp4",
-			wantEpisode: 1,
-		},
-		{
-			name:        "多季度番剧",
-			torrentName: "[Lilith-Raws] 我的英雄学院 第七季 - 08 [Baha][WEB-DL][1080p].mp4",
-			bangumi: &model.Bangumi{
-				OfficialTitle: "我的英雄学院",
-				Season:        7,
-			},
-			config: &model.BangumiRenameConfig{
-				Year:  false,
-				Group: false,
-			},
-			wantPath:    "我的英雄学院 S07E08.mp4",
-			wantEpisode: 8,
-		},
+// setupMockClient 创建用于测试的 mock download client
+func setupMockClient() *download.DownloadClient {
+	mockDownloader := downloader.NewMockDownloader()
+	mockConfig := &model.DownloaderConfig{
+		SavePath: "",
+		Type:     "mock",
 	}
+	mockDownloader.Init(mockConfig)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// 设置配置
-			Init(tt.config)
-
-			meta, gotPath := GenPath(tt.torrentName, tt.bangumi)
-
-			if gotPath != tt.wantPath {
-				t.Errorf("GenPath() path = %q, want %q", gotPath, tt.wantPath)
-			}
-
-			if meta != nil && meta.Episode != tt.wantEpisode {
-				t.Errorf("GenPath() episode = %d, want %d", meta.Episode, tt.wantEpisode)
-			}
-		})
-	}
+	dlClient := download.NewDownloadClient()
+	dlClient.Init(mockConfig)
+	dlClient.Downloader = mockDownloader
+	return dlClient
 }
 
-func TestGenPath_ParseFailed(t *testing.T) {
-	// 设置配置
+func TestRename_SingleFile(t *testing.T) {
+	// 我推的孩子 Season 2, 单个文件
+	// 种子名: [Dynamis One] [Oshi no Ko] - 26 (ABEMA 1920x1080 AVC AAC MP4) [8DF340A3].mp4
 	Init(&model.BangumiRenameConfig{
 		Year:  false,
 		Group: false,
 	})
 
-	// 测试无法解析集数的情况 - 合集类型会返回 -1
-	torrentName := "[字幕组] 番剧名 [全集][1080p].mp4"
+	dlClient := setupMockClient()
+	r := New(nil, dlClient)
+
+	torrent := &model.Torrent{
+		DownloadUID: "1317e47882474c771e29ed2271b282fbfb56e7d2",
+		Name:        "[Dynamis One] [Oshi no Ko] - 26 (ABEMA 1920x1080 AVC AAC MP4) [8DF340A3].mp4",
+	}
 	bangumi := &model.Bangumi{
-		OfficialTitle: "测试番剧",
+		OfficialTitle: "我推的孩子",
+		Season:        2,
+	}
+
+	ctx := context.Background()
+	r.Rename(ctx, torrent, bangumi)
+
+	// 验证文件是否已重命名
+	files, err := dlClient.GetTorrentFiles(ctx, torrent.DownloadUID)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles() error = %v", err)
+	}
+
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+
+	want := "我推的孩子 S02E26.mp4"
+	if files[0] != want {
+		t.Errorf("renamed file = %q, want %q", files[0], want)
+	}
+}
+
+func TestRename_SingleFileWithYearAndGroup(t *testing.T) {
+	// 同一个种子,但开启年份和字幕组
+	Init(&model.BangumiRenameConfig{
+		Year:  true,
+		Group: true,
+	})
+
+	dlClient := setupMockClient()
+	r := New(nil, dlClient)
+
+	torrent := &model.Torrent{
+		DownloadUID: "1317e47882474c771e29ed2271b282fbfb56e7d2",
+		Name:        "[Dynamis One] [Oshi no Ko] - 26 (ABEMA 1920x1080 AVC AAC MP4) [8DF340A3].mp4",
+	}
+	bangumi := &model.Bangumi{
+		OfficialTitle: "我推的孩子",
+		Season:        2,
+		Year:          "2024",
+	}
+
+	ctx := context.Background()
+	r.Rename(ctx, torrent, bangumi)
+
+	files, err := dlClient.GetTorrentFiles(ctx, torrent.DownloadUID)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles() error = %v", err)
+	}
+
+	// Dynamis One 不在已知字幕组列表中, parser 不会提取 group
+	want := "我推的孩子 (2024) S02E26.mp4"
+	if files[0] != want {
+		t.Errorf("renamed file = %q, want %q", files[0], want)
+	}
+}
+
+func TestRename_MultipleFiles(t *testing.T) {
+	// 与游戏中心的少女异文化交流的故事, 12集合集
+	// 种子文件路径带目录前缀,Rename 应该取 filepath.Base 再生成新路径
+	Init(&model.BangumiRenameConfig{
+		Year:  false,
+		Group: false,
+	})
+
+	dlClient := setupMockClient()
+	r := New(nil, dlClient)
+
+	torrent := &model.Torrent{
+		DownloadUID: "e0a951e431269be7b556101447fbdf9d0842d72f",
+		Name:        "[三明治摆烂组&Prejudice-Studio] 与游戏中心的少女异文化交流的故事 [01-12 合集]",
+	}
+	bangumi := &model.Bangumi{
+		OfficialTitle: "与游戏中心的少女异文化交流的故事",
 		Season:        1,
 	}
 
-	meta, gotPath := GenPath(torrentName, bangumi)
+	ctx := context.Background()
+	r.Rename(ctx, torrent, bangumi)
 
-	// 解析失败时应该返回空字符串
-	if gotPath != "" {
-		t.Errorf("GenPath() with invalid torrent name should return empty path, got %q", gotPath)
+	files, err := dlClient.GetTorrentFiles(ctx, torrent.DownloadUID)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles() error = %v", err)
 	}
 
-	if meta != nil {
-		t.Logf("meta.Episode = %d (expected -1 for collection)", meta.Episode)
+	if len(files) != 12 {
+		t.Fatalf("expected 12 files, got %d", len(files))
+	}
+
+	// 验证 12 集都存在且格式正确
+	seen := make(map[string]bool)
+	for _, f := range files {
+		seen[f] = true
+	}
+	for ep := 1; ep <= 12; ep++ {
+		want := fmt.Sprintf("与游戏中心的少女异文化交流的故事 S01E%02d.mp4", ep)
+		if !seen[want] {
+			t.Errorf("missing expected file %q", want)
+		}
 	}
 }
 
-func TestGenPath_NegativeOffset(t *testing.T) {
+func TestRename_WithOffset(t *testing.T) {
+	// 模拟第二季偏移量场景: 种子里集数是14, 偏移-12 后变成 E02
 	Init(&model.BangumiRenameConfig{
 		Year:  false,
 		Group: false,
 	})
 
-	torrentName := "[ANi] 转生贵族靠鉴定技能一飞冲天 - 14 [1080p].mp4"
+	// 手动设置 mock 数据
+	mockDownloader := downloader.NewMockDownloader()
+	mockConfig := &model.DownloaderConfig{
+		SavePath: "",
+		Type:     "mock",
+	}
+	mockDownloader.Init(mockConfig)
+
+	dlClient := download.NewDownloadClient()
+	dlClient.Init(mockConfig)
+	dlClient.Downloader = mockDownloader
+
+	// 通过 Add 方法添加自定义种子
+	hash := "abc123test"
+	mockDownloader.AddMockTorrent(hash, &model.TorrentDownloadInfo{
+		SavePath:  "转生贵族靠鉴定技能一飞冲天/Season 2",
+		Completed: 1,
+	}, []string{
+		"[ANi] 转生贵族靠鉴定技能一飞冲天 - 14 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4",
+	})
+
+	r := New(nil, dlClient)
+	torrent := &model.Torrent{
+		DownloadUID: hash,
+		Name:        "[ANi] 转生贵族靠鉴定技能一飞冲天 - 14 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4",
+	}
 	bangumi := &model.Bangumi{
 		OfficialTitle: "转生贵族靠鉴定技能一飞冲天",
 		Season:        2,
 		Offset:        -12,
 	}
 
-	meta, gotPath := GenPath(torrentName, bangumi)
+	ctx := context.Background()
+	r.Rename(ctx, torrent, bangumi)
 
-	wantPath := "转生贵族靠鉴定技能一飞冲天 S02E02.mp4"
-	if gotPath != wantPath {
-		t.Errorf("GenPath() path = %q, want %q", gotPath, wantPath)
+	files, err := dlClient.GetTorrentFiles(ctx, hash)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles() error = %v", err)
 	}
 
-	if meta != nil && meta.Episode != 14 {
-		t.Errorf("GenPath() raw episode = %d, want 14", meta.Episode)
+	want := "转生贵族靠鉴定技能一飞冲天 S02E02.mp4"
+	if len(files) != 1 || files[0] != want {
+		t.Errorf("renamed file = %q, want %q", files, want)
 	}
 }
 
-func TestGetBangumi(t *testing.T) {
-	// 初始化 MockDownloader
+func TestRename_NilBangumi_FallbackToGetBangumi(t *testing.T) {
+	// bangumi 为 nil 时, Rename 会调用 getBangumi 从路径解析
+	Init(&model.BangumiRenameConfig{
+		Year:  false,
+		Group: false,
+	})
+
+	dlClient := setupMockClient()
+	r := New(nil, dlClient)
+
+	torrent := &model.Torrent{
+		DownloadUID: "1317e47882474c771e29ed2271b282fbfb56e7d2",
+		Name:        "[Dynamis One] [Oshi no Ko] - 26 (ABEMA 1920x1080 AVC AAC MP4) [8DF340A3].mp4",
+	}
+
+	ctx := context.Background()
+	// bangumi 传 nil, 应自动从 savePath "我推的孩子/Season 2" 解析出来
+	r.Rename(ctx, torrent, nil)
+
+	files, err := dlClient.GetTorrentFiles(ctx, torrent.DownloadUID)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles() error = %v", err)
+	}
+
+	want := "我推的孩子 S02E26.mp4"
+	if len(files) != 1 || files[0] != want {
+		t.Errorf("renamed file = %q, want %q", files[0], want)
+	}
+}
+
+func TestRename_SkipSameFilename(t *testing.T) {
+	// 如果新路径和旧路径相同, 应该跳过重命名
+	Init(&model.BangumiRenameConfig{
+		Year:  false,
+		Group: false,
+	})
+
 	mockDownloader := downloader.NewMockDownloader()
 	mockConfig := &model.DownloaderConfig{
-		SavePath: "/downloads",
+		SavePath: "",
+		Type:     "mock",
 	}
 	mockDownloader.Init(mockConfig)
 
-	// 设置 download.Client
-	download.Client.Downloader = mockDownloader
-	download.Client.SavePath = mockConfig.SavePath
+	dlClient := download.NewDownloadClient()
+	dlClient.Init(mockConfig)
+	dlClient.Downloader = mockDownloader
+
+	// 文件名已经是目标格式
+	alreadyRenamed := "败犬女主太多了 S01E02.mp4"
+	hash := "skip_same_test"
+	mockDownloader.AddMockTorrent(hash, &model.TorrentDownloadInfo{
+		SavePath:  "败犬女主太多了/Season 1",
+		Completed: 1,
+	}, []string{alreadyRenamed})
+
+	r := New(nil, dlClient)
+	torrent := &model.Torrent{
+		DownloadUID: hash,
+		Name:        alreadyRenamed,
+	}
+	bangumi := &model.Bangumi{
+		OfficialTitle: "败犬女主太多了",
+		Season:        1,
+	}
+
+	ctx := context.Background()
+	r.Rename(ctx, torrent, bangumi)
+
+	files, err := dlClient.GetTorrentFiles(ctx, hash)
+	if err != nil {
+		t.Fatalf("GetTorrentFiles() error = %v", err)
+	}
+
+	// 文件名应保持不变
+	if files[0] != alreadyRenamed {
+		t.Errorf("file should not be renamed, got %q", files[0])
+	}
+}
+
+func TestRename_MixedSubGroups(t *testing.T) {
+	// 测试不同字幕组格式的种子重命名
+	Init(&model.BangumiRenameConfig{
+		Year:  true,
+		Group: true,
+	})
+
+	mockDownloader := downloader.NewMockDownloader()
+	mockConfig := &model.DownloaderConfig{
+		SavePath: "",
+		Type:     "mock",
+	}
+	mockDownloader.Init(mockConfig)
+
+	dlClient := download.NewDownloadClient()
+	dlClient.Init(mockConfig)
+	dlClient.Downloader = mockDownloader
 
 	tests := []struct {
-		name            string
-		torrent         *model.Torrent
-		wantBangumiName string
-		wantSeason      int
-		wantErr         bool
+		name     string
+		hash     string
+		file     string
+		bangumi  *model.Bangumi
+		wantFile string
 	}{
 		{
-			name: "我推的孩子-Season2",
-			torrent: &model.Torrent{
-				DownloadUID: "1317e47882474c771e29ed2271b282fbfb56e7d2",
-				Name:        "[Dynamis One] [Oshi no Ko] - 26",
+			name: "ANi字幕组-败犬女主太多了",
+			hash: "test_ani_makeine",
+			file: "[ANi] 败犬女主太多了！ - 02 [1080p][Baha][WEB-DL][AAC AVC][CHT].mp4",
+			bangumi: &model.Bangumi{
+				OfficialTitle: "败犬女主太多了",
+				Season:        1,
+				Year:          "2024",
 			},
-			wantBangumiName: "我推的孩子",
-			wantSeason:      2,
-			wantErr:         false,
+			wantFile: "败犬女主太多了 (2024) S01E02 - ANi.mp4",
 		},
 		{
-			name: "与游戏中心的少女异文化交流的故事-Season1",
-			torrent: &model.Torrent{
-				DownloadUID: "e0a951e431269be7b556101447fbdf9d0842d72f",
-				Name:        "与游戏中心的少女异文化交流的故事",
+			name: "Lilith-Raws-我的英雄学院",
+			hash: "test_lilith_mha",
+			file: "[Lilith-Raws] 我的英雄学院 第七季 - 08 [Baha][WEB-DL][1080p].mp4",
+			bangumi: &model.Bangumi{
+				OfficialTitle: "我的英雄学院",
+				Season:        7,
+				Year:          "2024",
 			},
-			wantBangumiName: "与游戏中心的少女异文化交流的故事",
-			wantSeason:      1,
-			wantErr:         false,
+			wantFile: "我的英雄学院 (2024) S07E08 - Lilith-Raws.mp4",
+		},
+		{
+			// Skymoon-Raws 不在已知字幕组列表中, 但通过 fallback 取第一个 token 作为 group
+			name: "Skymoon-Raws-SPY×FAMILY",
+			hash: "test_skymoon_spy",
+			file: "[Skymoon-Raws] SPY×FAMILY Season 3 - 41 [ViuTV][WEB-DL][CHT][SRT][1080p][AVC AAC].mkv",
+			bangumi: &model.Bangumi{
+				OfficialTitle: "SPY×FAMILY",
+				Season:        3,
+				Year:          "2025",
+			},
+			wantFile: "SPY×FAMILY (2025) S03E41 - Skymoon-Raws.mkv",
+		},
+		{
+			name: "樱桃花字幕组-Rock wa Lady",
+			hash: "test_sakura_rock",
+			file: "[樱桃花字幕组] Rock wa Lady no Tashinami deshite - 02（1080P） [B7ADB92B].mp4",
+			bangumi: &model.Bangumi{
+				OfficialTitle: "淑女养成摇滚",
+				Season:        1,
+				Year:          "2025",
+			},
+			wantFile: "淑女养成摇滚 (2025) S01E02 - 樱桃花字幕组.mp4",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := New(nil)
-			bangumi, err := r.GetBangumi(context.Background(), tt.torrent)
+			mockDownloader.AddMockTorrent(tt.hash, &model.TorrentDownloadInfo{
+				SavePath:  tt.bangumi.OfficialTitle + "/Season 1",
+				Completed: 1,
+			}, []string{tt.file})
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetBangumi() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			r := New(nil, dlClient)
+			torrent := &model.Torrent{
+				DownloadUID: tt.hash,
+				Name:        tt.file,
 			}
 
-			if err == nil {
-				if bangumi.OfficialTitle != tt.wantBangumiName {
-					t.Errorf("GetBangumi() OfficialTitle = %q, want %q", bangumi.OfficialTitle, tt.wantBangumiName)
-				}
-				if bangumi.Season != tt.wantSeason {
-					t.Errorf("GetBangumi() Season = %d, want %d", bangumi.Season, tt.wantSeason)
-				}
+			ctx := context.Background()
+			r.Rename(ctx, torrent, tt.bangumi)
+
+			files, err := dlClient.GetTorrentFiles(ctx, tt.hash)
+			if err != nil {
+				t.Fatalf("GetTorrentFiles() error = %v", err)
+			}
+
+			if len(files) != 1 || files[0] != tt.wantFile {
+				t.Errorf("renamed file = %q, want %q", files[0], tt.wantFile)
 			}
 		})
 	}

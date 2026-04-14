@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/database"
@@ -17,15 +18,14 @@ func NewCheckHandler(db *database.DB, dl *download.DownloadClient) taskrunner.Ph
 	return func(ctx context.Context, task *model.Task) taskrunner.PhaseResult {
 		for _, guid := range task.Guids {
 			trueID, err := dl.Check(ctx, guid)
-
 			// GUID 没找到，试下一个
-			if apperrors.IsKeyError(err) {
-				continue
-			}
-
 			if err != nil {
+				if apperrors.IsKeyError(err) {
+					continue
+				}else if apperrors.IsNetworkError(err) {
+					return taskrunner.PhaseResult{Err: err, PollAfter: time.Duration(30) * time.Second}
+				}
 				slog.Error("[check handler] 检查下载失败", "error", err)
-				//TODO: 如果是网络问题,可以重试
 				return taskrunner.PhaseResult{Err: err}
 			}
 
