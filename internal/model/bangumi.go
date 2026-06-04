@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"strconv"
+
+	"gorm.io/gorm"
 )
 
 type MikanItem struct {
@@ -134,7 +136,7 @@ type Bangumi struct {
 	ExcludeFilter string `json:"exclude_filter" gorm:"default:'';comment:'番剧排除过滤器'"`
 	Parse         string `json:"parser" gorm:"default:'tmdb';comment:'番剧解析器'"`
 	PosterLink    string `json:"poster_link" gorm:"default:'';comment:'番剧海报链接'"`
-	Deleted       bool   `json:"deleted" gorm:"default:false;comment:'是否已删除'"`
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // NewBangumi 创建一个默认的 Bangumi 实例

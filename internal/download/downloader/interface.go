@@ -71,9 +71,8 @@ func NewDownloader(downloaderType string) (BaseDownloader) {
 		d = NewQBittorrentDownloader()
 	case "mock":
 		d = NewMockDownloader()
-	// case "alist":
-	// 	// TODO: Alist 下载器待实现
-	// 	return nil
+	case "clouddrive", "clouddrive2":
+		d = NewCloudDriveDownloader()
 	default:
 		slog.Warn("未知的下载器类型，使用默认的 qBittorrent 下载器", "type", downloaderType)
 		return NewQBittorrentDownloader()

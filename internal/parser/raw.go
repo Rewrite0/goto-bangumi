@@ -40,6 +40,5 @@ func (p *RawParse) Parse(title string) *model.Bangumi {
 		Parse:         "raw",
 		RSSLink:       "",
 		PosterLink:    "",
-		Deleted:       false,
 	}
 }

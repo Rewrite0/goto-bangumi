@@ -39,7 +39,6 @@ func NewDB(dsn *string) (*DB, error) {
 	// 注意：迁移顺序很重要，基础表（无外键依赖）应该先迁移
 	// 1. 首先迁移独立的基础表
 	// 2. 然后迁移有外键关联的表
-	// 3. GORM 会自动创建多对多关系的中间表（如 bangumi_parser_mappings）
 	if err := gormDB.AutoMigrate(
 		// 基础表（无外键依赖）
 		&model.MikanItem{},
@@ -261,21 +260,23 @@ func (db *DB) GetBangumiParseByID(ctx context.Context, id uint) (*model.EpisodeM
 	return &parser, nil
 }
 
-// GetBangumisByParseID 根据 ParseID 查找所有关联的 Bangumi
+// GetBangumisByParseID 根据 ParseID 查找关联的 Bangumi（一对多：EpisodeMetadata.BangumiID）
 func (db *DB) GetBangumisByParseID(ctx context.Context, parserID uint) ([]*model.Bangumi, error) {
-	var bangumis []*model.Bangumi
-	err := db.WithContext(ctx).Joins("JOIN bangumi_parser_mappings ON bangumi.id = bangumi_parser_mappings.bangumi_id").
-		Where("bangumi_parser_mappings.bangumi_parser_id = ?", parserID).
-		Find(&bangumis).Error
-	return bangumis, err
+	var parser model.EpisodeMetadata
+	if err := db.WithContext(ctx).First(&parser, parserID).Error; err != nil {
+		return nil, err
+	}
+	var bangumi model.Bangumi
+	if err := db.WithContext(ctx).First(&bangumi, parser.BangumiID).Error; err != nil {
+		return nil, err
+	}
+	return []*model.Bangumi{&bangumi}, nil
 }
 
-// GetParsesByBangumiID 根据 BangumiID 查找所有关联的 Parse
+// GetParsesByBangumiID 根据 BangumiID 查找所有关联的 Parse（一对多：EpisodeMetadata.BangumiID）
 func (db *DB) GetParsesByBangumiID(ctx context.Context, bangumiID uint) ([]*model.EpisodeMetadata, error) {
 	var parsers []*model.EpisodeMetadata
-	err := db.WithContext(ctx).Joins("JOIN bangumi_parser_mappings ON bangumi_parser.id = bangumi_parser_mappings.bangumi_parser_id").
-		Where("bangumi_parser_mappings.bangumi_id = ?", bangumiID).
-		Find(&parsers).Error
+	err := db.WithContext(ctx).Where("bangumi_id = ?", bangumiID).Find(&parsers).Error
 	return parsers, err
 }
 
@@ -351,13 +352,19 @@ func (db *DB) CountParsesOfBangumi(ctx context.Context, bangumiID int) (int64, e
 	return db.WithContext(ctx).Model(&bangumi).Association("EpisodeMetadata").Count(), nil
 }
 
-// AddBangumiToParse 为 Parse 添加 Bangumi（多对多关系反向操作）
-func (db *DB) AddBangumiToParse(ctx context.Context, parserID int, bangumis []*model.Bangumi) error {
-	var parser model.EpisodeMetadata
-	if err := db.WithContext(ctx).First(&parser, parserID).Error; err != nil {
-		return err
+// AddBangumiToParse 将多个 EpisodeMetadata 关联到指定 Bangumi（更新 BangumiID 外键）
+func (db *DB) AddBangumiToParse(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
+	return db.WithContext(ctx).Model(&model.EpisodeMetadata{}).
+		Where("id IN ?", parseIDs(parsers)).
+		Update("bangumi_id", bangumiID).Error
+}
+
+func parseIDs(parsers []*model.EpisodeMetadata) []int {
+	ids := make([]int, len(parsers))
+	for i, p := range parsers {
+		ids[i] = p.ID
 	}
-	return db.WithContext(ctx).Model(&parser).Association("Bangumis").Append(bangumis)
+	return ids
 }
 
 // ============ Torrent 关联查询优化方法 ============

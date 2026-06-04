@@ -36,7 +36,7 @@ func (db *DB) GetRSSByID(ctx context.Context, id uint) (*model.RSSItem, error) {
 // GetRSSByURL 根据 URL 获取 RSS 项
 func (db *DB) GetRSSByURL(ctx context.Context, url string) (*model.RSSItem, error) {
 	var item model.RSSItem
-	err := db.WithContext(ctx).Where("url = ?", url).First(&item).Error
+	err := db.WithContext(ctx).Where("link = ?", url).First(&item).Error
 	if err != nil {
 		return nil, err
 	}
