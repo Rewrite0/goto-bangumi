@@ -105,9 +105,16 @@ func (db *DB) GetTorrentByDownloadUID(ctx context.Context, duid string) (*model.
 
 // ListTorrentByBangumi 根据番剧信息获取种子列表
 func (db *DB) ListTorrentByBangumi(ctx context.Context, title string, season int, rssLink string) ([]*model.Torrent, error) {
+	var bangumi model.Bangumi
+	err := db.WithContext(ctx).Where("official_title = ? AND season = ? AND rss_link = ?", title, season, rssLink).First(&bangumi).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
 	var torrents []*model.Torrent
-	err := db.WithContext(ctx).Where("bangumi_official_title = ? AND bangumi_season = ? AND rss_link = ?",
-		title, season, rssLink).Find(&torrents).Error
+	err = db.WithContext(ctx).Where("bangumi_id = ?", bangumi.ID).Find(&torrents).Error
 	return torrents, err
 }
 
@@ -308,7 +315,7 @@ func (db *DB) ListBangumiWithDetails(ctx context.Context) ([]*model.Bangumi, err
 // ============ Bangumi 和 BangumiParse 多对多关联方法 ============
 
 // AddParsesToBangumi 为 Bangumi 添加多个 Parse（一对多关系）
-func (db *DB) AddParsesToBangumi(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) AddParsesToBangumi(ctx context.Context, bangumiID uint, parsers []*model.EpisodeMetadata) error {
 	var bangumi model.Bangumi
 	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
@@ -317,7 +324,7 @@ func (db *DB) AddParsesToBangumi(ctx context.Context, bangumiID int, parsers []*
 }
 
 // ReplaceParsesToBangumi 替换 Bangumi 的所有 Parse（一对多关系）
-func (db *DB) ReplaceParsesToBangumi(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) ReplaceParsesToBangumi(ctx context.Context, bangumiID uint, parsers []*model.EpisodeMetadata) error {
 	var bangumi model.Bangumi
 	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
@@ -326,7 +333,7 @@ func (db *DB) ReplaceParsesToBangumi(ctx context.Context, bangumiID int, parsers
 }
 
 // RemoveParsesFromBangumi 从 Bangumi 中移除指定的 Parse（一对多关系）
-func (db *DB) RemoveParsesFromBangumi(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) RemoveParsesFromBangumi(ctx context.Context, bangumiID uint, parsers []*model.EpisodeMetadata) error {
 	var bangumi model.Bangumi
 	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
@@ -335,7 +342,7 @@ func (db *DB) RemoveParsesFromBangumi(ctx context.Context, bangumiID int, parser
 }
 
 // ClearParsesFromBangumi 清空 Bangumi 的所有 Parse（一对多关系）
-func (db *DB) ClearParsesFromBangumi(ctx context.Context, bangumiID int) error {
+func (db *DB) ClearParsesFromBangumi(ctx context.Context, bangumiID uint) error {
 	var bangumi model.Bangumi
 	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return err
@@ -344,7 +351,7 @@ func (db *DB) ClearParsesFromBangumi(ctx context.Context, bangumiID int) error {
 }
 
 // CountParsesOfBangumi 统计 Bangumi 关联的 Parse 数量
-func (db *DB) CountParsesOfBangumi(ctx context.Context, bangumiID int) (int64, error) {
+func (db *DB) CountParsesOfBangumi(ctx context.Context, bangumiID uint) (int64, error) {
 	var bangumi model.Bangumi
 	if err := db.WithContext(ctx).First(&bangumi, bangumiID).Error; err != nil {
 		return 0, err
@@ -353,14 +360,14 @@ func (db *DB) CountParsesOfBangumi(ctx context.Context, bangumiID int) (int64, e
 }
 
 // AddBangumiToParse 将多个 EpisodeMetadata 关联到指定 Bangumi（更新 BangumiID 外键）
-func (db *DB) AddBangumiToParse(ctx context.Context, bangumiID int, parsers []*model.EpisodeMetadata) error {
+func (db *DB) AddBangumiToParse(ctx context.Context, bangumiID uint, parsers []*model.EpisodeMetadata) error {
 	return db.WithContext(ctx).Model(&model.EpisodeMetadata{}).
 		Where("id IN ?", parseIDs(parsers)).
 		Update("bangumi_id", bangumiID).Error
 }
 
-func parseIDs(parsers []*model.EpisodeMetadata) []int {
-	ids := make([]int, len(parsers))
+func parseIDs(parsers []*model.EpisodeMetadata) []uint {
+	ids := make([]uint, len(parsers))
 	for i, p := range parsers {
 		ids[i] = p.ID
 	}
@@ -373,7 +380,6 @@ func parseIDs(parsers []*model.EpisodeMetadata) []int {
 func (db *DB) GetTorrentWithDetails(ctx context.Context, url string) (*model.Torrent, error) {
 	var torrent model.Torrent
 	err := db.WithContext(ctx).Preload("Bangumi").
-		Preload("BangumiParse").
 		Where("Link = ?", url).
 		First(&torrent).Error
 	if err != nil {
@@ -386,7 +392,6 @@ func (db *DB) GetTorrentWithDetails(ctx context.Context, url string) (*model.Tor
 func (db *DB) ListTorrentWithDetails(ctx context.Context) ([]*model.Torrent, error) {
 	var torrents []*model.Torrent
 	err := db.WithContext(ctx).Preload("Bangumi").
-		Preload("BangumiParse").
 		Find(&torrents).Error
 	return torrents, err
 }

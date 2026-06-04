@@ -62,7 +62,7 @@ func NewTmdbItem() *TmdbItem {
 // EpisodeMetadata 用来存储番剧解析器的原始信息
 // 是否要认为一个 EpisodeMetadata 可以对应多个 Bangumi?
 type EpisodeMetadata struct {
-	ID           int    `gorm:"primaryKey;autoIncrement"`
+	ID           uint   `gorm:"primaryKey;autoIncrement"`
 	Title        string `gorm:"default:'';comment:'番剧名称'"`
 	Season       int    `gorm:"default:1;comment:'季度'"`
 	SeasonRaw    string `gorm:"default:'';comment:'季度原名'"`
@@ -76,7 +76,7 @@ type EpisodeMetadata struct {
 	AudioInfo    string `gorm:"default:'';comment:'音频信息'"`
 	VideoInfo    string `gorm:"default:'';comment:'视频信息'"`
 	Version      int `gorm:"-;comment:'版本信息'"`
-	BangumiID    int    `gorm:"index;comment:'关联的Bangumi ID'"`
+	BangumiID    uint   `gorm:"index;comment:'关联的Bangumi ID'"`
 	Collection   bool   `gorm:"-;comment:'是否为合集'"`
 	EpisodeStart int    `gorm:"-;comment:'集数开始'"`
 	EpisodeEnd   int    `gorm:"-;comment:'集数结束'"`
@@ -110,7 +110,7 @@ func (e EpisodeMetadata) String() string {
 
 // Bangumi 用于存储一些可配置的番剧信息
 type Bangumi struct {
-	ID            int    `gorm:"primaryKey"`
+	ID            uint   `gorm:"primaryKey"`
 	OfficialTitle string `json:"official_title" gorm:"default:'';comment:'番剧中文名'"`
 	Year          string `json:"year" gorm:"default:'';comment:'番剧年份'"`
 	Season        int    `json:"season" gorm:"default:1;comment:'番剧季度'"`

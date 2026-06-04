@@ -25,7 +25,7 @@ type Torrent struct {
 	Downloaded  DownloadStatus `gorm:"default:0;column:downloaded" json:"downloaded"`
 	Renamed     bool      `gorm:"default:false;column:renamed" json:"renamed"`
 	// torrent 属于一个 bangumi
-	BangumiID int    `gorm:"index;column:bangumi_id" json:"bangumi_id"`
+	BangumiID uint   `gorm:"index;column:bangumi_id" json:"bangumi_id"`
 	Homepage  string `gorm:"column:homepage" json:"homepage"`
 
 	// GORM 关联对象（用于预加载）

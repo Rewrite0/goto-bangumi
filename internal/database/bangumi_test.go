@@ -126,7 +126,7 @@ func TestBangumiLifecycle(t *testing.T) {
 
 	t.Run("GetWithDetails", func(t *testing.T) {
 		ctx := context.Background()
-		got, err := db.GetBangumiWithDetails(ctx, uint(bangumi.ID))
+		got, err := db.GetBangumiWithDetails(ctx, bangumi.ID)
 		if err != nil {
 			t.Fatalf("GetBangumiWithDetails failed: %v", err)
 		}

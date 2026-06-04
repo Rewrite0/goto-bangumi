@@ -78,12 +78,12 @@ func (db *DB) UpdateBangumi(bangumi *model.Bangumi) error {
 }
 
 // DeleteBangumi 删除番剧
-func (db *DB) DeleteBangumi(id int) error {
+func (db *DB) DeleteBangumi(id uint) error {
 	return db.Delete(&model.Bangumi{}, id).Error
 }
 
 // GetBangumiByID 根据 ID 获取番剧
-func (db *DB) GetBangumiByID(id int) (*model.Bangumi, error) {
+func (db *DB) GetBangumiByID(id uint) (*model.Bangumi, error) {
 	var bangumi model.Bangumi
 	err := db.First(&bangumi, id).Error
 	if err != nil {
