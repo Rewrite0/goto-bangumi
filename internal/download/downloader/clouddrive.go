@@ -75,29 +75,19 @@ func (d *CloudDriveDownloader) authCtx(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+tok)
 }
 
-// Auth authenticates against CloudDrive2 and stores the JWT token.
+// Auth stores the API token from config.Password and resolves cloud info.
 func (d *CloudDriveDownloader) Auth(ctx context.Context) (bool, error) {
-	resp, err := d.rpc.GetToken(ctx, &clouddrive.GetTokenRequest{
-		UserName: d.config.Username,
-		Password: d.config.Password,
-	})
-	if err != nil {
-		slog.Error("[CloudDrive2] auth error", "host", d.config.Host, "error", err)
-		return false, &apperrors.NetworkError{Err: fmt.Errorf("CloudDrive2 auth: %w", err)}
-	}
-	if !resp.GetSuccess() {
-		slog.Error("[CloudDrive2] auth failed", "message", resp.GetErrorMessage())
+	if d.config.Password == "" {
 		return false, &apperrors.DownloadAuthenticationError{
-			Err:  fmt.Errorf("CloudDrive2 login failed: %s", resp.GetErrorMessage()),
+			Err:  fmt.Errorf("CloudDrive2 API token is empty"),
 			Name: d.config.Username,
 		}
 	}
-
 	d.mu.Lock()
-	d.token = resp.GetToken()
+	d.token = d.config.Password
 	d.mu.Unlock()
 
-	slog.Info("[CloudDrive2] auth success", "user", d.config.Username)
+	slog.Info("[CloudDrive2] auth with API token")
 	d.resolveCloudInfo(ctx)
 	return true, nil
 }
