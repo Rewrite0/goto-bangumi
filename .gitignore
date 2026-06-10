@@ -2,5 +2,6 @@
 config
 data
 .claude
+.zed/
 module
 .worktrees/
