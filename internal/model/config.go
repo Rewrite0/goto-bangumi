@@ -2,50 +2,50 @@ package model
 
 // Config is the top-level configuration struct containing all sub-configs.
 type Config struct {
-	Program      ProgramConfig       `yaml:"program" env-prefix:"PROGRAM_"`
-	Downloader   DownloaderConfig    `yaml:"downloader" env-prefix:"DOWNLOADER_"`
-	Parser       RssParserConfig     `yaml:"parser" env-prefix:"PARSER_"`
-	Rename       BangumiRenameConfig `yaml:"rename" env-prefix:"RENAME_"`
-	Notification NotificationConfig  `yaml:"notification" env-prefix:"NOTIFICATION_"`
-	Proxy        ProxyConfig         `yaml:"proxy" env-prefix:"PROXY_"`
+	Program      ProgramConfig       `toml:"program" env-prefix:"PROGRAM_"`
+	Downloader   DownloaderConfig    `toml:"downloader" env-prefix:"DOWNLOADER_"`
+	Parser       RssParserConfig     `toml:"parser" env-prefix:"PARSER_"`
+	Rename       BangumiRenameConfig `toml:"rename" env-prefix:"RENAME_"`
+	Notification NotificationConfig  `toml:"notification" env-prefix:"NOTIFICATION_"`
+	Proxy        ProxyConfig         `toml:"proxy" env-prefix:"PROXY_"`
 }
 
 type ProgramConfig struct {
-	RssTime     int    `yaml:"rss_time" env:"RSS_TIME" env-default:"600"`
-	WebuiPort   int    `yaml:"webui_port" env:"WEBUI_PORT" env-default:"7892"`
-	PassWord    string `yaml:"password" env:"PASSWORD" env-default:"adminadmin"`
-	DebugEnable bool   `yaml:"debug_enable" env:"DEBUG_ENABLE" env-default:"false"`
+	RssTime     int    `toml:"rss_time" env:"RSS_TIME" env-default:"600"`
+	WebuiPort   int    `toml:"webui_port" env:"WEBUI_PORT" env-default:"7892"`
+	PassWord    string `toml:"password" env:"PASSWORD" env-default:"adminadmin"`
+	DebugEnable bool   `toml:"debug_enable" env:"DEBUG_ENABLE" env-default:"false"`
 }
 
 type DownloaderConfig struct {
-	Type     string `yaml:"type" env:"TYPE" env-default:"qbittorrent"`
-	SavePath string `yaml:"path" env:"PATH" env-default:"/downloads/Bangumi"`
-	Host     string `yaml:"host" env:"HOST" env-default:"127.0.0.1:8080"`
-	Ssl      bool   `yaml:"ssl" env:"SSL" env-default:"false"`
-	Username string `yaml:"username" env:"USERNAME" env-default:"admin"`
-	Password string `yaml:"password" env:"PASSWORD" env-default:"adminadmin"`
+	Type     string `toml:"type" env:"TYPE" env-default:"qbittorrent"`
+	SavePath string `toml:"path" env:"PATH" env-default:"/downloads/Bangumi"`
+	Host     string `toml:"host" env:"HOST" env-default:"127.0.0.1:8080"`
+	Ssl      bool   `toml:"ssl" env:"SSL" env-default:"false"`
+	Username string `toml:"username" env:"USERNAME" env-default:"admin"`
+	Password string `toml:"password" env:"PASSWORD" env-default:"adminadmin"`
 }
 
 type RssParserConfig struct {
-	Enable         bool     `yaml:"enable" env:"ENABLE" env-default:"true"`
-	Filter         []string `yaml:"filter"`
-	Include        []string `yaml:"include"`
-	Language       string   `yaml:"language" env:"LANGUAGE" env-default:"zh"`
-	MikanCustomURL string   `yaml:"mikan_custom_url" env:"MIKAN_CUSTOM_URL" env-default:"mikanani.me"`
-	TmdbAPIKey     string   `yaml:"tmdb_api_key" env:"TMDB_API_KEY"`
+	Enable         bool     `toml:"enable" env:"ENABLE" env-default:"true"`
+	Filter         []string `toml:"filter"`
+	Include        []string `toml:"include"`
+	Language       string   `toml:"language" env:"LANGUAGE" env-default:"zh"`
+	MikanCustomURL string   `toml:"mikan_custom_url" env:"MIKAN_CUSTOM_URL" env-default:"mikanani.me"`
+	TmdbAPIKey     string   `toml:"tmdb_api_key" env:"TMDB_API_KEY"`
 }
 
 type BangumiRenameConfig struct {
-	Enable       bool   `yaml:"enable" env:"ENABLE" env-default:"true"`
-	EpsComplete  bool   `yaml:"eps_complete" env:"EPS_COMPLETE" env-default:"false"`
-	RenameMethod string `yaml:"rename_method" env:"RENAME_METHOD" env-default:"advanced"`
-	Year         bool   `yaml:"year" env:"YEAR" env-default:"false"`
-	Group        bool   `yaml:"group" env:"GROUP" env-default:"false"`
+	Enable       bool   `toml:"enable" env:"ENABLE" env-default:"true"`
+	EpsComplete  bool   `toml:"eps_complete" env:"EPS_COMPLETE" env-default:"false"`
+	RenameMethod string `toml:"rename_method" env:"RENAME_METHOD" env-default:"advanced"`
+	Year         bool   `toml:"year" env:"YEAR" env-default:"false"`
+	Group        bool   `toml:"group" env:"GROUP" env-default:"false"`
 }
 
 type NotificationConfig struct {
-	Enable bool   `yaml:"enable" env:"ENABLE" env-default:"false"`
-	Type   string `yaml:"type" env:"TYPE" env-default:"telegram"`
-	Token  string `yaml:"token" env:"TOKEN"`
-	ChatID string `yaml:"chat_id" env:"CHAT_ID"`
+	Enable bool   `toml:"enable" env:"ENABLE" env-default:"false"`
+	Type   string `toml:"type" env:"TYPE" env-default:"telegram"`
+	Token  string `toml:"token" env:"TOKEN"`
+	ChatID string `toml:"chat_id" env:"CHAT_ID"`
 }

@@ -9,12 +9,12 @@ package model
 
 // ProxyConfig represents proxy configuration
 type ProxyConfig struct {
-	Enable   bool   `yaml:"enable" env:"ENABLE" env-default:"false"`
-	Type     string `yaml:"type" env:"TYPE" env-default:"http"`
-	Host     string `yaml:"host" env:"HOST"`
-	Port     int    `yaml:"port" env:"PORT" env-default:"0"`
-	Username string `yaml:"username" env:"USERNAME"`
-	Password string `yaml:"password" env:"PASSWORD"`
+	Enable   bool   `toml:"enable" env:"ENABLE" env-default:"false"`
+	Type     string `toml:"type" env:"TYPE" env-default:"http"`
+	Host     string `toml:"host" env:"HOST"`
+	Port     int    `toml:"port" env:"PORT" env-default:"0"`
+	Username string `toml:"username" env:"USERNAME"`
+	Password string `toml:"password" env:"PASSWORD"`
 }
 
 // RSSXml represents RSS feed starting from channel level
