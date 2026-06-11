@@ -53,15 +53,12 @@ type BaseDownloader interface {
 
 	// Delete 删除种子
 	Delete(ctx context.Context, hashes []string) (bool, error)
-
-	// GetInterval 获取下载器轮询间隔时间，单位ms
-	GetInterval() int
 }
 
 // NewDownloader 创建下载器实例
 // 根据 downloaderType 动态选择具体的下载器实现
 // 支持的类型: "qbittorrent", "qb"
-func NewDownloader(downloaderType string) (BaseDownloader) {
+func NewDownloader(downloaderType string) BaseDownloader {
 
 	var d BaseDownloader
 

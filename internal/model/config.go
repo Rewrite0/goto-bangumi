@@ -20,10 +20,12 @@ type ProgramConfig struct {
 type DownloaderConfig struct {
 	Type     string `toml:"type" env:"TYPE" env-default:"qbittorrent"`
 	SavePath string `toml:"path" env:"PATH" env-default:"/downloads/Bangumi"`
+	MediaPath string `toml:"media_path" env:"MEDIA_PATH" env-default:"/downloads/Bangumi"`
 	Host     string `toml:"host" env:"HOST" env-default:"127.0.0.1:8080"`
 	Ssl      bool   `toml:"ssl" env:"SSL" env-default:"false"`
 	Username string `toml:"username" env:"USERNAME" env-default:"admin"`
 	Password string `toml:"password" env:"PASSWORD" env-default:"adminadmin"`
+	Token    string `toml:"token" env:"TOKEN"`
 }
 
 type RssParserConfig struct {

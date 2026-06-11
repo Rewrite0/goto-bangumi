@@ -1,4 +1,4 @@
-// Package download 提供下载客户端，负责限流和登录管理
+// Package download 提供下载客户端，负责登录管理并转发下载器操作
 package download
 
 import (
@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"golang.org/x/sync/singleflight"
-	"golang.org/x/time/rate"
 
 	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/download/downloader"
@@ -17,10 +15,9 @@ import (
 	"goto-bangumi/internal/network"
 )
 
-// DownloadClient 下载客户端，负责限流和登录管理
+// DownloadClient 下载客户端，负责登录管理
 type DownloadClient struct {
 	Downloader     downloader.BaseDownloader
-	limiter        *rate.Limiter
 	SavePath       string
 	downloaderType string
 
@@ -43,12 +40,6 @@ func (c *DownloadClient) Init(config *model.DownloaderConfig) {
 		c.downloaderType = downloaderType
 		dl := downloader.NewDownloader(c.downloaderType)
 		c.Downloader = dl
-
-		// 从 downloader 获取 API interval（每个 downloader 自己定义）
-		interval := dl.GetInterval()
-
-		// 创建限流器：rate.Every 将间隔转换为速率
-		c.limiter = rate.NewLimiter(rate.Every(time.Duration(interval)*time.Millisecond), 1)
 	}
 	c.Downloader.Init(config)
 }
@@ -56,11 +47,6 @@ func (c *DownloadClient) Init(config *model.DownloaderConfig) {
 func (c *DownloadClient) Check(ctx context.Context, hash string) (string, error) {
 	if err := c.EnsureLogin(ctx); err != nil {
 		return "", fmt.Errorf("登录失败: %w", err)
-	}
-
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return "", err
 	}
 
 	return c.Downloader.CheckHash(ctx, hash)
@@ -106,11 +92,6 @@ func (c *DownloadClient) Add(ctx context.Context, url, savePath string) ([]strin
 		return nil, fmt.Errorf("登录失败: %w", err)
 	}
 
-	// 2. 限流
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return nil, err
-	}
 	// 解析种子或磁力链接
 	var torrentInfo *model.TorrentInfo
 	var err error
@@ -159,11 +140,6 @@ func (c *DownloadClient) Delete(ctx context.Context, hashes []string) error {
 		return fmt.Errorf("登录失败: %w", err)
 	}
 
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return err
-	}
-
 	_, err := c.Downloader.Delete(ctx, hashes)
 	if err != nil && apperrors.IsDownloadAuthenticationError(err) {
 		c.logined = false
@@ -176,11 +152,6 @@ func (c *DownloadClient) Delete(ctx context.Context, hashes []string) error {
 func (c *DownloadClient) Rename(ctx context.Context, hash, oldPath, newPath string) error {
 	if err := c.EnsureLogin(ctx); err != nil {
 		return fmt.Errorf("登录失败: %w", err)
-	}
-
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return err
 	}
 
 	_, err := c.Downloader.Rename(ctx, hash, oldPath, newPath)
@@ -197,11 +168,6 @@ func (c *DownloadClient) Move(ctx context.Context, hashes []string, location str
 		return fmt.Errorf("登录失败: %w", err)
 	}
 
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return err
-	}
-
 	_, err := c.Downloader.Move(ctx, hashes, location)
 	if err != nil && apperrors.IsDownloadAuthenticationError(err) {
 		c.logined = false
@@ -215,22 +181,12 @@ func (c *DownloadClient) GetTorrentFiles(ctx context.Context, hash string) ([]st
 	if err := c.EnsureLogin(ctx); err != nil {
 		return nil, fmt.Errorf("登录失败: %w", err)
 	}
-
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return nil, err
-	}
 	return c.Downloader.GetTorrentFiles(ctx, hash)
 }
 
 func (c *DownloadClient) GetTorrentInfo(ctx context.Context, hash string) (*model.TorrentDownloadInfo, error) {
 	if err := c.EnsureLogin(ctx); err != nil {
 		return nil, fmt.Errorf("登录失败: %w", err)
-	}
-
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return nil, err
 	}
 	return c.Downloader.GetTorrentInfo(ctx, hash)
 }
@@ -241,11 +197,5 @@ func (c *DownloadClient) TorrentsInfo(ctx context.Context, statusFilter, categor
 		return nil, fmt.Errorf("登录失败: %w", err)
 	}
 
-	if err := c.limiter.Wait(ctx); err != nil {
-		slog.Debug("[download client] Request interrupted by user", "error", err)
-		return nil, err
-	}
-
 	return c.Downloader.TorrentsInfo(ctx, statusFilter, category, tag, limit)
 }
-

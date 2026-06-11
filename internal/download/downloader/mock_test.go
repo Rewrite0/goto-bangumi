@@ -33,9 +33,6 @@ func TestNewMockDownloader(t *testing.T) {
 	if d.completionThreshold != 3 {
 		t.Errorf("completionThreshold = %d, want 3", d.completionThreshold)
 	}
-	if d.APIInterval != 100 {
-		t.Errorf("APIInterval = %d, want 100", d.APIInterval)
-	}
 }
 
 func TestMockDownloader_PreloadedData(t *testing.T) {
@@ -374,12 +371,7 @@ func TestMockDownloader_InterfaceLifecycle(t *testing.T) {
 		t.Error("CheckHash should fail after delete")
 	}
 
-	// 11. GetInterval
-	if d.GetInterval() <= 0 {
-		t.Errorf("GetInterval = %d, want > 0", d.GetInterval())
-	}
-
-	// 12. Logout
+	// 11. Logout
 	ok, err = d.Logout(ctx)
 	if err != nil || !ok {
 		t.Fatalf("Logout failed: ok=%v, err=%v", ok, err)
@@ -447,7 +439,7 @@ func TestNewDownloader_MockType(t *testing.T) {
 	}
 }
 
-func TestMockDownloader_AuthLogoutInterval(t *testing.T) {
+func TestMockDownloader_AuthLogout(t *testing.T) {
 	d := newTestMock(t)
 	ctx := context.Background()
 
@@ -465,9 +457,5 @@ func TestMockDownloader_AuthLogoutInterval(t *testing.T) {
 	}
 	if d.loggedIn {
 		t.Error("loggedIn should be false after Logout")
-	}
-
-	if d.GetInterval() != 100 {
-		t.Errorf("GetInterval = %d, want 100", d.GetInterval())
 	}
 }

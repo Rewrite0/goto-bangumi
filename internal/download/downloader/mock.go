@@ -23,7 +23,6 @@ type mockTorrent struct {
 // MockDownloader 有状态的模拟下载器，用于测试
 type MockDownloader struct {
 	config              *model.DownloaderConfig
-	APIInterval         int
 	mu                  sync.RWMutex
 	torrents            map[string]*mockTorrent
 	loggedIn            bool
@@ -33,7 +32,6 @@ type MockDownloader struct {
 // NewMockDownloader 创建新的模拟下载器
 func NewMockDownloader() *MockDownloader {
 	return &MockDownloader{
-		APIInterval:         100,
 		completionThreshold: 3,
 	}
 }
@@ -270,9 +268,4 @@ func (d *MockDownloader) AddMockTorrent(hash string, info *model.TorrentDownload
 		files:      files,
 		queryCount: d.completionThreshold,
 	}
-}
-
-// GetInterval 获取 API 调用间隔
-func (d *MockDownloader) GetInterval() int {
-	return d.APIInterval
 }

@@ -39,7 +39,8 @@ type QBittorrentDownloader struct {
 	client      *resty.Client
 	config      *model.DownloaderConfig
 	ConfigName  string
-	APIInterval int // API 调用间隔（毫秒），导出供 client 使用
+	APIInterval int // API 调用间隔（毫秒）
+	limiter     *apiLimiter
 }
 
 // NewQBittorrentDownloader 创建新的 qBittorrent 下载器
@@ -48,6 +49,7 @@ func NewQBittorrentDownloader() *QBittorrentDownloader {
 		client:      resty.New(),
 		APIInterval: 200, // 默认 200ms 间隔
 		ConfigName:  "download",
+		limiter:     newAPILimiter(200 * time.Millisecond),
 	}
 }
 
@@ -59,6 +61,11 @@ func (d *QBittorrentDownloader) Init(config *model.DownloaderConfig) error {
 
 	// 保存配置
 	d.config = config
+	if d.limiter == nil {
+		d.limiter = newAPILimiter(time.Duration(d.APIInterval) * time.Millisecond)
+	} else {
+		d.limiter.SetInterval(time.Duration(d.APIInterval) * time.Millisecond)
+	}
 
 	// 构建完整的 URL（添加协议前缀）
 	baseURL := d.config.Host
@@ -88,8 +95,19 @@ func (d *QBittorrentDownloader) Init(config *model.DownloaderConfig) error {
 	return nil
 }
 
+func (d *QBittorrentDownloader) wait(ctx context.Context) error {
+	if d.limiter == nil {
+		return nil
+	}
+	return d.limiter.Wait(ctx, "qBittorrent")
+}
+
 // Auth 认证登录
 func (d *QBittorrentDownloader) Auth(ctx context.Context) (bool, error) {
+	if err := d.wait(ctx); err != nil {
+		return false, err
+	}
+
 	resp, err := d.client.R().
 		SetContext(ctx).
 		SetFormData(map[string]string{
@@ -126,13 +144,16 @@ func (d *QBittorrentDownloader) Auth(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-
 	// 到也不会有其他状态码
 	return false, &apperrors.NetworkError{Err: fmt.Errorf("登录失败：状态码 %d", resp.StatusCode()), StatusCode: resp.StatusCode()}
 }
 
 // Logout 登出
 func (d *QBittorrentDownloader) Logout(ctx context.Context) (bool, error) {
+	if err := d.wait(ctx); err != nil {
+		return false, err
+	}
+
 	resp, err := d.client.R().SetContext(ctx).Post(QBAPI["logout"])
 	if err != nil {
 		slog.Error("[qBittorrent] 登出错误", "error", err)
@@ -146,9 +167,12 @@ func (d *QBittorrentDownloader) Logout(ctx context.Context) (bool, error) {
 	return false, &apperrors.NetworkError{Err: fmt.Errorf("登出失败：状态码 %d", resp.StatusCode()), StatusCode: resp.StatusCode()}
 }
 
-
 // AddCategory 添加分类
 func (d *QBittorrentDownloader) AddCategory(category string) (bool, error) {
+	if err := d.wait(context.Background()); err != nil {
+		return false, err
+	}
+
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"category": category,
@@ -167,6 +191,10 @@ func (d *QBittorrentDownloader) AddCategory(category string) (bool, error) {
 
 // GetTorrentFiles 获取种子文件列表
 func (d *QBittorrentDownloader) GetTorrentFiles(ctx context.Context, hash string) ([]string, error) {
+	if err := d.wait(ctx); err != nil {
+		return nil, err
+	}
+
 	resp, err := d.client.R().
 		SetContext(ctx).
 		SetQueryParam("hash", hash).
@@ -207,6 +235,10 @@ func (d *QBittorrentDownloader) GetTorrentFiles(ctx context.Context, hash string
 // 返回 (连接状态, 种子信息, error)
 // 种子信息: 成功时返回 TorrentDownloadInfo, 失败返回 nil
 func (d *QBittorrentDownloader) GetTorrentInfo(ctx context.Context, hash string) (*model.TorrentDownloadInfo, error) {
+	if err := d.wait(ctx); err != nil {
+		return nil, err
+	}
+
 	resp, err := d.client.R().
 		SetContext(ctx).
 		SetQueryParam("hash", hash).
@@ -255,6 +287,10 @@ func (d *QBittorrentDownloader) GetTorrentInfo(ctx context.Context, hash string)
 
 // TorrentsInfo 获取种子信息列表
 func (d *QBittorrentDownloader) TorrentsInfo(ctx context.Context, statusFilter, category string, tag *string, limit int) ([]map[string]any, error) {
+	if err := d.wait(ctx); err != nil {
+		return nil, err
+	}
+
 	req := d.client.R().
 		SetContext(ctx).
 		SetQueryParams(map[string]string{
@@ -300,14 +336,18 @@ func (d *QBittorrentDownloader) TorrentsInfo(ctx context.Context, statusFilter, 
 
 func (d *QBittorrentDownloader) CheckHash(ctx context.Context, hash string) (string, error) {
 	info, err := d.GetTorrentInfo(ctx, hash)
-	if info!=nil{
-		return hash,nil
+	if info != nil {
+		return hash, nil
 	}
 	return hash, err
 }
 
 // Add 添加种子
 func (d *QBittorrentDownloader) Add(ctx context.Context, torrentInfo *model.TorrentInfo, savePath string) ([]string, error) {
+	if err := d.wait(ctx); err != nil {
+		return nil, err
+	}
+
 	// 准备基础表单数据
 	data := make(map[string]string)
 	data["savepath"] = savePath
@@ -370,6 +410,10 @@ func (d *QBittorrentDownloader) Add(ctx context.Context, torrentInfo *model.Torr
 
 // Delete 删除种子
 func (d *QBittorrentDownloader) Delete(ctx context.Context, hashes []string) (bool, error) {
+	if err := d.wait(ctx); err != nil {
+		return false, err
+	}
+
 	hashesStr := strings.Join(hashes, "|")
 
 	resp, err := d.client.R().
@@ -392,6 +436,10 @@ func (d *QBittorrentDownloader) Delete(ctx context.Context, hashes []string) (bo
 
 // Rename 重命名种子文件
 func (d *QBittorrentDownloader) Rename(ctx context.Context, torrentHash, oldPath, newPath string) (bool, error) {
+	if err := d.wait(ctx); err != nil {
+		return false, err
+	}
+
 	resp, err := d.client.R().
 		SetContext(ctx).
 		SetFormData(map[string]string{
@@ -419,6 +467,10 @@ func (d *QBittorrentDownloader) Rename(ctx context.Context, torrentHash, oldPath
 
 // Move 移动种子到新位置
 func (d *QBittorrentDownloader) Move(ctx context.Context, hashes []string, newLocation string) (bool, error) {
+	if err := d.wait(ctx); err != nil {
+		return false, err
+	}
+
 	hashesStr := strings.Join(hashes, "|")
 
 	resp, err := d.client.R().
@@ -441,6 +493,10 @@ func (d *QBittorrentDownloader) Move(ctx context.Context, hashes []string, newLo
 
 // SetCategory 设置种子分类
 func (d *QBittorrentDownloader) SetCategory(hash, category string) (bool, error) {
+	if err := d.wait(context.Background()); err != nil {
+		return false, err
+	}
+
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"hashes":   hash,
@@ -460,6 +516,10 @@ func (d *QBittorrentDownloader) SetCategory(hash, category string) (bool, error)
 
 // AddTag 添加标签
 func (d *QBittorrentDownloader) AddTag(hash, tag string) (bool, error) {
+	if err := d.wait(context.Background()); err != nil {
+		return false, err
+	}
+
 	resp, err := d.client.R().
 		SetFormData(map[string]string{
 			"hashes": hash,
@@ -479,6 +539,10 @@ func (d *QBittorrentDownloader) AddTag(hash, tag string) (bool, error) {
 
 // SetPreferences 设置偏好设置
 func (d *QBittorrentDownloader) SetPreferences(prefs map[string]interface{}) error {
+	if err := d.wait(context.Background()); err != nil {
+		return err
+	}
+
 	resp, err := d.client.R().
 		SetBody(prefs).
 		Post(QBAPI["setPreferences"])
@@ -507,7 +571,3 @@ func (d *QBittorrentDownloader) SetPreferences(prefs map[string]interface{}) err
 // 		slog.Error("[qBittorrent] HTTP错误", "function", functionName, "status", resp.StatusCode())
 // 	}
 // }
-
-func (d *QBittorrentDownloader) GetInterval() int {
-	return d.APIInterval
-}
