@@ -39,7 +39,10 @@ func InitProgram(ctx context.Context) *Program {
 	cfg := conf.Get()
 
 	// Initialize logger
-	logger.Init(cfg.Program.DebugEnable)
+	logger.Init()
+	if cfg.Program.DebugEnable {
+		logger.SetLevel(slog.LevelDebug)
+	}
 
 	// Initialize database
 	db, err := database.NewDB(nil)
