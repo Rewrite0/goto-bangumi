@@ -1,7 +1,7 @@
 package model
 
 import (
-	"sync"
+	"context"
 	"time"
 )
 
@@ -46,15 +46,17 @@ func (p TaskPhase) IsTerminal() bool {
 
 // Task 下载任务
 type Task struct {
-	Mu    sync.Mutex
 	CurrentPhase TaskPhase
 
-	HoldingSlot bool // 是否持有下载槽位
-	RetryCount  int  // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）
+	HoldingSlot bool            // 是否持有下载槽位
+	RetryCount  int             // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）
+	Ctx         context.Context // 当前阶段的上下文（如果有）
+	CancelFunc  func()          // 取消当前阶段的上下文（如果有）
 
 	// 业务数据
 	Guids     []string  // 可能的 hash 列表
 	StartTime time.Time // 开始下载时间（用于超时判断）
+	NextPoll  time.Time // 下一次轮询时间（用于调度）
 	EndTime   time.Time // 结束时间（成功或失败）
 	ErrorMsg  string
 
@@ -66,17 +68,17 @@ type Task struct {
 // NewAddTask 创建下载任务（从 PhaseAdding 开始）
 func NewAddTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
-		CurrentPhase:   PhaseAdding,
-		Torrent: torrent,
-		Bangumi: bangumi,
+		CurrentPhase: PhaseAdding,
+		Torrent:      torrent,
+		Bangumi:      bangumi,
 	}
 }
 
 // NewRenameTask 创建重命名任务（从 PhaseRenaming 开始）
 func NewRenameTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
-		CurrentPhase:   PhaseRenaming,
-		Torrent: torrent,
-		Bangumi: bangumi,
+		CurrentPhase: PhaseRenaming,
+		Torrent:      torrent,
+		Bangumi:      bangumi,
 	}
 }
