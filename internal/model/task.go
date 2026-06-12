@@ -47,15 +47,15 @@ func (p TaskPhase) IsTerminal() bool {
 // Task 下载任务
 type Task struct {
 	Mu    sync.Mutex
-	Phase TaskPhase
+	CurrentPhase TaskPhase
 
-	HoldingSlot bool // 是否持有流水线槽位
-	SlotExpired bool // 槽位已超时释放，不再竞争新槽位
+	HoldingSlot bool // 是否持有下载槽位
 	RetryCount  int  // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）
 
 	// 业务数据
 	Guids     []string  // 可能的 hash 列表
 	StartTime time.Time // 开始下载时间（用于超时判断）
+	EndTime   time.Time // 结束时间（成功或失败）
 	ErrorMsg  string
 
 	// 关联对象（内存引用）
@@ -66,7 +66,7 @@ type Task struct {
 // NewAddTask 创建下载任务（从 PhaseAdding 开始）
 func NewAddTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
-		Phase:   PhaseAdding,
+		CurrentPhase:   PhaseAdding,
 		Torrent: torrent,
 		Bangumi: bangumi,
 	}
@@ -75,7 +75,7 @@ func NewAddTask(torrent *Torrent, bangumi *Bangumi) *Task {
 // NewRenameTask 创建重命名任务（从 PhaseRenaming 开始）
 func NewRenameTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
-		Phase:   PhaseRenaming,
+		CurrentPhase:   PhaseRenaming,
 		Torrent: torrent,
 		Bangumi: bangumi,
 	}

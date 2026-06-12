@@ -13,7 +13,7 @@ import (
 // helper: 创建带 link 的测试 task（从 PhaseAdding 开始）
 func newTestTask(link string) *model.Task {
 	return &model.Task{
-		Phase: model.PhaseAdding,
+		CurrentPhase: model.PhaseAdding,
 		Torrent: &model.Torrent{
 			Link: link,
 			Name: "test-" + link,
@@ -49,11 +49,11 @@ func TestNew_DirectParams(t *testing.T) {
 	if runner == nil {
 		t.Fatal("New should return non-nil runner")
 	}
-	if runner.maxConcurrency != 8 {
-		t.Errorf("maxConcurrency = %d, want 8", runner.maxConcurrency)
+	if cap(runner.runningSem) != 8 {
+		t.Errorf("maxConcurrency = %d, want 8", cap(runner.runningSem))
 	}
-	if runner.maxDownload != 5 {
-		t.Errorf("maxDownload = %d, want 5", runner.maxDownload)
+	if cap(runner.downloadSem) != 5 {
+		t.Errorf("maxDownload = %d, want 5", cap(runner.downloadSem))
 	}
 }
 
@@ -96,8 +96,8 @@ func TestHappyPath_AllPhasesComplete(t *testing.T) {
 		t.Errorf("rename handler called %d times, want 1", v)
 	}
 
-	if task.Phase != model.PhaseEnd {
-		t.Errorf("task phase = %v, want PhaseEnd", task.Phase)
+	if task.CurrentPhase != model.PhaseEnd {
+		t.Errorf("task phase = %v, want PhaseEnd", task.CurrentPhase)
 	}
 	if task.HoldingSlot {
 		t.Error("task should not be holding slot after completion")
@@ -129,8 +129,8 @@ func TestHandlerError_TaskFails(t *testing.T) {
 		return runner.Get("magnet:fail") == nil
 	}, "failed task was not removed")
 
-	if task.Phase != model.PhaseFailed {
-		t.Errorf("task phase = %v, want PhaseFailed", task.Phase)
+	if task.CurrentPhase != model.PhaseFailed {
+		t.Errorf("task phase = %v, want PhaseFailed", task.CurrentPhase)
 	}
 	if task.ErrorMsg != "boom" {
 		t.Errorf("task ErrorMsg = %q, want %q", task.ErrorMsg, "boom")
@@ -176,8 +176,8 @@ func TestPollAfter_ReEnqueuesTask(t *testing.T) {
 	if v := pollCount.Load(); v != 3 {
 		t.Errorf("poll handler called %d times, want 3", v)
 	}
-	if task.Phase != model.PhaseEnd {
-		t.Errorf("task phase = %v, want PhaseEnd", task.Phase)
+	if task.CurrentPhase != model.PhaseEnd {
+		t.Errorf("task phase = %v, want PhaseEnd", task.CurrentPhase)
 	}
 }
 
@@ -211,7 +211,7 @@ func TestDuplicateSubmit_Rejected(t *testing.T) {
 		t.Error("duplicate Submit should return false")
 	}
 	// 验证里面只有一个任务
-	n := len( runner.downloadQueue)
+	n := runner.queue.lenDownload()
 	if n != 1 {
 		t.Errorf("expected 1 task in queue, got %d", n)
 	}
@@ -459,8 +459,8 @@ func TestNewRenameTask_SkipsToRenamePhase(t *testing.T) {
 	if v := renameCount.Load(); v != 1 {
 		t.Errorf("rename handler called %d times, want 1", v)
 	}
-	if task.Phase != model.PhaseEnd {
-		t.Errorf("task phase = %v, want PhaseEnd", task.Phase)
+	if task.CurrentPhase != model.PhaseEnd {
+		t.Errorf("task phase = %v, want PhaseEnd", task.CurrentPhase)
 	}
 	if task.HoldingSlot {
 		t.Error("rename task should never hold a slot")
