@@ -3,7 +3,6 @@ package network
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +12,6 @@ import (
 
 	"goto-bangumi/internal/apperrors"
 	"goto-bangumi/internal/model"
-	"goto-bangumi/internal/utils"
 
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/sync/singleflight"
@@ -231,64 +229,6 @@ func (r *RequestClient) GetJSONTo(ctx context.Context, url string, v any) error 
 	return nil
 }
 
-// GetRSS fetches and parses RSS feed, returns the parsed RSS object
-func (r *RequestClient) GetRSS(ctx context.Context, url string) (*model.RSSXml, error) {
-	// 需要能判断出来是网络不好还是空的 xml
-	// 空的 https://mikanani.me/RSS/Search?searchstr=ANININI
-	resp, err := r.Get(ctx, url) // 这里是网络问题
-	if err != nil {
-		return nil, err
-	}
-	// Parse XML
-	var rss model.RSSXml
-	if err := xml.Unmarshal(resp, &rss); err != nil {
-		return nil, &apperrors.ParseError{Err: fmt.Errorf("failed to parse RSS XML: %w", err)}
-	}
-	return &rss, nil
-}
-
-// GetTorrents fetches and parses RSS feed to extract torrents
-// 返回错误主是是区分是网络请求错误还是确实没有种子
-func (r *RequestClient) GetTorrents(ctx context.Context, url string) ([]*model.Torrent, error) {
-	rss, err := r.GetRSS(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	torrents := make([]*model.Torrent, 0, len(rss.Torrents))
-	for _, item := range rss.Torrents {
-		// 移除名称中的换行符和多余空格
-		item.Name = utils.ProcessTitle(item.Name)
-		// 创建 Torrent 对象
-		torrent := &model.Torrent{
-			Name:     item.Name,
-			Homepage: item.Enclosure.URL,
-			Link:      url,
-		}
-
-		if item.Enclosure.URL != "" {
-			torrent.Link = item.Enclosure.URL
-			torrent.Homepage = item.Link
-		} else {
-			torrent.Link = item.Link
-		}
-
-		torrents = append(torrents, torrent)
-	}
-
-	return torrents, nil
-}
-
-// GetRSSTitle fetches RSS feed and returns the channel title
-func (r *RequestClient) GetRSSTitle(ctx context.Context, url string) (string, error) {
-	rss, err := r.GetRSS(ctx, url)
-	// GetRSS 已经包装了 NetworkError 或 ParseError，直接传递
-	if err != nil {
-		return "", err
-	}
-	return rss.Title, nil
-}
-
 // PostData sends form data and files via POST request
 func (r *RequestClient) PostData(ctx context.Context, url string, data map[string]string, files map[string][]byte) ([]byte, error) {
 	req := r.client.R().SetContext(ctx)
@@ -319,8 +259,6 @@ func (r *RequestClient) PostData(ctx context.Context, url string, data map[strin
 
 	return resp.Body(), nil
 }
-
-
 
 // SetTestCache 用于测试时向全局缓存添加模拟数据
 // 这个函数只应该在测试代码中使用
