@@ -18,6 +18,16 @@ const (
 	PhaseEnd                          // 任务完成标志
 )
 
+type TaskState int
+
+const (
+	// 初次创建任务时的状态
+	TaskStateCreated   TaskState = iota // 创建
+	TaskStateIdle                       // 空闲
+	TaskStateRunning                    // 运行中
+	TaskStateCompleted                  // 完成
+)
+
 func (p TaskPhase) String() string {
 	switch p {
 	case PhaseAdding:
@@ -47,11 +57,11 @@ func (p TaskPhase) IsTerminal() bool {
 // Task 下载任务
 type Task struct {
 	CurrentPhase TaskPhase
+	State        TaskState
 
-	HoldingSlot bool            // 是否持有下载槽位
-	RetryCount  int             // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）
-	Ctx         context.Context // 当前阶段的上下文（如果有）
-	CancelFunc  func()          // 取消当前阶段的上下文（如果有）
+	RetryCount int             // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）,由 handler 自己判断是否该停止重试
+	Ctx        context.Context // 当前阶段的上下文（如果有）
+	CancelFunc func()          // 取消当前阶段的上下文（如果有）
 
 	// 业务数据
 	Guids     []string  // 可能的 hash 列表
@@ -69,6 +79,7 @@ type Task struct {
 func NewAddTask(torrent *Torrent, bangumi *Bangumi) *Task {
 	return &Task{
 		CurrentPhase: PhaseAdding,
+		State:        TaskStateCreated,
 		Torrent:      torrent,
 		Bangumi:      bangumi,
 	}

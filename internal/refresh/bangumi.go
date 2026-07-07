@@ -30,7 +30,11 @@ func New(db *database.DB) *Refresher {
 
 func (r *Refresher) getTorrents(ctx context.Context, url string) []*model.Torrent {
 	client := network.GetRequestClient()
-	torrents, _ := rss.GetTorrents(ctx, client, url)
+	torrents, err := rss.GetTorrents(ctx, client, url)
+	if err != nil {
+		slog.Error("[getTorrents]从 RSS 获取种子列表失败", "URL", url, "error", err)
+		return nil
+	}
 	slog.Debug("[getTorrents]从 RSS 获取种子列表", "URL", url, "数量", len(torrents))
 	newTorrents, _ := r.db.CheckNewTorrents(ctx, torrents)
 	return newTorrents
@@ -40,7 +44,11 @@ func (r *Refresher) getTorrents(ctx context.Context, url string) []*model.Torren
 func (r *Refresher) FindNewBangumi(ctx context.Context, rssItem *model.RSSItem) {
 	slog.Info("[FindNewBangumi]检查 RSS 是否有新的番剧", "RSS 名称", rssItem.Name)
 	netClient := network.GetRequestClient()
-	torrents, _ := rss.GetTorrents(ctx, netClient, rssItem.Link)
+	torrents, err := rss.GetTorrents(ctx, netClient, rssItem.Link)
+	if err != nil {
+		slog.Error("[FindNewBangumi]从 RSS 获取种子列表失败", "RSS 名称", rssItem.Name, "error", err)
+		return
+	}
 	for _, t := range torrents {
 		// 突然想起来, possess title 后,名字会和 torrent 里面的差很多,这时就会导致不停的创建
 		// 这就是之前 AB 会导致不停的创建的原因, 新在已经解决了

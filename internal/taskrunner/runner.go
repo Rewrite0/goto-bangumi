@@ -27,16 +27,13 @@ type TaskRunner struct {
 	mu    sync.Mutex
 	tasks map[string]*model.Task
 
-	// queue taskQueue
-	// downloadqueue 里面只有满足调度的任务, 到重试的任务到时间才会重新加入队列
-	// 所以如果下载槽位有需求,可以直接拿出来调度
-	downloadQueue taskQueue
-	generalQueue  taskQueue
+	// channel 信号量：len = 当前运行数，cap = 上限
+	runningSem chan struct{}
 
-	// channel 信号量：len = 当前占用，cap = 上限
-	runningSem  chan struct{}
-	downloadSem chan struct{}
-	slotTimeout time.Duration
+	// 下载槽位由 scheduler 集中分配，key 为 task.Torrent.Link
+	maxDownload   int
+	downloadSlots map[string]struct{}
+	slotTimeout   time.Duration
 
 	// 控制
 	signal chan struct{} // buffer 1，唤醒 scheduler
@@ -44,23 +41,18 @@ type TaskRunner struct {
 	cancel context.CancelFunc
 }
 
-// New 创建任务执行器
-// maxDownload 并不代表最多有几个下载, 只是尽量保证, 是为了防止过慢
-// 的任务一直持有, 导致其他任务没有机会下载了
+// New 创建任务执行器。
+// maxDownload 表示最多同时持有下载流水线槽位的任务数；槽位可能跨 Adding/Checking/Downloading 多个阶段持有。
+// 默认的并行任务数是 8, 下载槽位数是 4
 func New(maxConcurrency, maxDownload int) *TaskRunner {
-	if maxConcurrency <= 0 {
-		maxConcurrency = 10
-	}
-	if maxDownload <= 0 {
-		maxDownload = 5
-	}
 	return &TaskRunner{
-		handlers:    make(map[model.TaskPhase]PhaseFunc),
-		tasks:       make(map[string]*model.Task),
-		runningSem:  make(chan struct{}, maxConcurrency),
-		downloadSem: make(chan struct{}, maxDownload),
-		slotTimeout: 10 * time.Minute,
-		signal:      make(chan struct{}, 1),
+		handlers:      make(map[model.TaskPhase]PhaseFunc),
+		tasks:         make(map[string]*model.Task),
+		runningSem:    make(chan struct{}, maxConcurrency),
+		maxDownload:   maxDownload,
+		downloadSlots: make(map[string]struct{}),
+		slotTimeout:   10 * time.Minute,
+		signal:        make(chan struct{}, 1),
 	}
 }
 
@@ -80,32 +72,30 @@ func (r *TaskRunner) notify() {
 	}
 }
 
-// enqueue 根据阶段放入对应队列
-func (r *TaskRunner) enqueue(task *model.Task) {
-	// 需要下载槽位的任务如果已经持有或者还没开始过，就放下载队列，其他的放一般队列
-	if needsDownloadSlot(task.CurrentPhase) && (task.HoldingSlot || task.StartTime.IsZero()) {
-		r.downloadQueue.enqueue(task)
-	} else {
-		r.generalQueue.enqueue(task)
-	}
-	r.notify()
-}
-
 // releaseSlot 释放下载槽位
-// 入队后通知调度一次
+// 释放后通知调度一次
+// 在取消，阶段转换下都有可能调用
 func (r *TaskRunner) releaseSlot(task *model.Task) {
-	if task.HoldingSlot {
-		<-r.downloadSem
-		task.HoldingSlot = false
+	r.mu.Lock()
+	released := r.releaseSlotLocked(task)
+	r.mu.Unlock()
+	if released {
 		r.notify()
 	}
 }
 
-// remove 从 tasks 中删除任务
-func (r *TaskRunner) remove(link string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.tasks, link)
+func (r *TaskRunner) releaseSlotLocked(task *model.Task) bool {
+	link := task.Torrent.Link
+	if _, ok := r.downloadSlots[link]; !ok {
+		return false
+	}
+	delete(r.downloadSlots, link)
+	return true
+}
+
+func (r *TaskRunner) holdingSlotLocked(task *model.Task) bool {
+	_, ok := r.downloadSlots[task.Torrent.Link]
+	return ok
 }
 
 // Submit 提交任务
@@ -123,7 +113,7 @@ func (r *TaskRunner) Submit(task *model.Task) bool {
 	task.Ctx = ctx
 	r.tasks[link] = task
 	slog.Debug("[taskrunner] 提交任务", "torrent", task.Torrent.Name)
-	r.enqueue(task)
+	r.notify()
 	return true
 }
 
@@ -136,25 +126,20 @@ func (r *TaskRunner) Cancel(link string) {
 		slog.Debug("[taskrunner] 取消任务失败，任务不存在", "link", link)
 		return
 	}
-
 	task.CancelFunc()
-	r.downloadQueue.remove(task)
-	r.generalQueue.remove(task)
+	released := r.releaseSlotLocked(task)
 	delete(r.tasks, link)
-}
-
-// Get 根据 link 获取任务
-func (r *TaskRunner) Get(link string) *model.Task {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.tasks[link]
+	if released {
+		r.notify()
+	}
 }
 
 // Start 启动 scheduler
 func (r *TaskRunner) Start(ctx context.Context) {
 	ctx, r.cancel = context.WithCancel(ctx)
-	r.wg.Add(1)
-	go r.scheduler(ctx)
+	r.wg.Go(func() {
+		r.scheduler(ctx)
+	})
 }
 
 // Stop 关闭所有任务
@@ -166,7 +151,6 @@ func (r *TaskRunner) Stop() {
 // scheduler 事件驱动调度循环
 func (r *TaskRunner) scheduler(ctx context.Context) {
 	slog.Info("[taskrunner] 任务执行器已启动")
-	defer r.wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
@@ -180,8 +164,9 @@ func (r *TaskRunner) scheduler(ctx context.Context) {
 // schedule 尝试尽可能多地调度任务, 除非没有可调度的任务了,不然会一直调度下去
 // 先看看正在下载的任务, 有没有要处理的
 // 调度的原则是优先处理有下载槽位的任务(要求满足时间)
-// 若还有空闲的下载槽位, 就从下载队列里取一个任务来处理
+// 若还有空闲的下载槽位, 就从 tasks 里找一个下载任务来处理
 // 如果上面没有要开始的任务, 就处理一般任务
+// TODO: 任务应该有一个时间限制
 func (r *TaskRunner) schedule(ctx context.Context) {
 	for {
 		// 非阻塞获取并发槽位
@@ -190,37 +175,67 @@ func (r *TaskRunner) schedule(ctx context.Context) {
 		default:
 			return
 		}
-		var task *model.Task
-		// 取一个下载槽位
-		select {
-		case r.downloadSem <- struct{}{}:
-			task = r.downloadQueue.tryDequeue()
-			if task != nil {
-				// 已经执有的返回现在拿到的位置
-				if task.HoldingSlot{
-					<-r.downloadSem
-				}
-				task.HoldingSlot = true
-			} else {
-			// 空的任务说明没有满足条件的任务了，先释放下载槽位
-				<-r.downloadSem
-				task = r.generalQueue.tryDequeue()
-			}
-		default:
-			// 到这说明下载槽位满了，先处理一般任务
-			task = r.generalQueue.tryDequeue()
-		}
+		task := r.pickTask(time.Now())
 		if task == nil {
 			// 到这说明没有可调度的任务了，释放之前占用的并发槽位
 			<-r.runningSem
 			return
 		}
-		r.dispatch(task.Ctx, task)
+		r.dispatch(task)
 	}
 }
 
+func (r *TaskRunner) pickTask(now time.Time) *model.Task {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// 先取一个正在下载槽位的任务，优先处理它们。
+	task := r.pickTaskLocked(now, func(task *model.Task) bool {
+		return r.holdingSlotLocked(task)
+	})
+	if task != nil {
+		return task
+	}
+
+	// 取一个下载槽位给还没进入下载流水线的任务。
+	if len(r.downloadSlots) < r.maxDownload {
+		task = r.pickTaskLocked(now, func(task *model.Task) bool {
+			return needsDownloadSlot(task.CurrentPhase) && !r.holdingSlotLocked(task)
+		})
+		if task != nil {
+			r.downloadSlots[task.Torrent.Link] = struct{}{}
+			return task
+		}
+		// 到这说明下载槽位满了，先处理一般任务。
+	}
+
+	return r.pickTaskLocked(now, func(task *model.Task) bool {
+		return !needsDownloadSlot(task.CurrentPhase)
+	})
+}
+
+func (r *TaskRunner) pickTaskLocked(now time.Time, match func(*model.Task) bool) *model.Task {
+	for _, task := range r.tasks {
+		if !isRunnable(task, now) || !match(task) {
+			continue
+		}
+		task.State = model.TaskStateRunning
+		task.NextPoll = time.Time{}
+		return task
+	}
+	return nil
+}
+
+func isRunnable(task *model.Task, now time.Time) bool {
+	if task.State != model.TaskStateCreated && task.State != model.TaskStateIdle {
+		return false
+	}
+	return task.NextPoll.IsZero() || !now.Before(task.NextPoll)
+}
+
 // dispatch 启动 goroutine 执行任务（调用方已持有一个 runningSem 槽位）
-func (r *TaskRunner) dispatch(ctx context.Context, task *model.Task) {
+func (r *TaskRunner) dispatch(task *model.Task) {
+	r.mu.Lock()
 	// 第一次执行任务的时候记录开始时间
 	if task.StartTime.IsZero() {
 		task.StartTime = time.Now()
@@ -228,26 +243,35 @@ func (r *TaskRunner) dispatch(ctx context.Context, task *model.Task) {
 	if task.EndTime.IsZero() {
 		task.EndTime = time.Now().Add(r.slotTimeout)
 	}
+	ctx := task.Ctx
+	r.mu.Unlock()
 
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		defer func() {
 			<-r.runningSem
 			r.notify()
 		}()
 		r.process(ctx, task)
-	}()
+	})
 }
 
 // process 处理单个任务
 // 任务当前阶段没有要处理的 handler 就直接推进到下一阶段
 func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
-	if task.HoldingSlot && time.Now().After(task.EndTime) {
+	r.mu.Lock()
+	if r.holdingSlotLocked(task) && time.Now().After(task.EndTime) {
+		name := task.Torrent.Name
+		held := time.Since(task.StartTime)
+		released := r.releaseSlotLocked(task)
+		r.mu.Unlock()
 		slog.Info("[taskrunner] 下载槽位超时，释放槽位",
-			"torrent", task.Torrent.Name,
-			"held", time.Since(task.StartTime))
-		r.releaseSlot(task)
+			"torrent", name,
+			"held", held)
+		if released {
+			r.notify()
+		}
+	} else {
+		r.mu.Unlock()
 	}
 
 	handler := r.handlers[task.CurrentPhase]
@@ -263,23 +287,32 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 			"torrent", task.Torrent.Name,
 			"phase", task.CurrentPhase,
 			"error", result.Err)
+		r.mu.Lock()
 		task.CurrentPhase = model.PhaseFailed
 		task.ErrorMsg = result.Err.Error()
-		r.releaseSlot(task)
-		r.remove(task.Torrent.Link)
+		released := r.releaseSlotLocked(task)
+		delete(r.tasks, task.Torrent.Link)
+		r.mu.Unlock()
+		if released {
+			r.notify()
+		}
 		return
 	}
 
 	if result.PollAfter > 0 {
+		r.mu.Lock()
 		task.RetryCount++
-		// context.AfterFunc 返回的 stop 函数：在 timer 触发时调用 stop()，
-		// 若返回 true 说明 ctx 尚未取消，可以安全入队；返回 false 则跳过。
-		// 重试的任务在这里入队
-		stop := context.AfterFunc(ctx, func() {})
+		task.NextPoll = time.Now().Add(result.PollAfter)
+		task.State = model.TaskStateIdle
+		r.mu.Unlock()
+		// 重试的任务到时间后只唤醒调度器，由调度器扫描 tasks 决定是否可运行。
 		time.AfterFunc(result.PollAfter, func() {
-			if stop() {
-				r.enqueue(task)
+			select {
+			case <-ctx.Done():
+				return
+			default:
 			}
+			r.notify()
 		})
 		return
 	}
@@ -297,11 +330,17 @@ func (r *TaskRunner) advance(task *model.Task) {
 	}
 	task.CurrentPhase = nextPhase
 	task.RetryCount = 0
+	task.NextPoll = time.Time{}
 
 	if nextPhase == model.PhaseEnd {
-		r.releaseSlot(task)
-		r.remove(task.Torrent.Link)
+		r.mu.Lock()
+		released := r.releaseSlotLocked(task)
+		delete(r.tasks, task.Torrent.Link)
+		r.mu.Unlock()
 		slog.Debug("[taskrunner] 任务完成", "torrent", task.Torrent.Name)
+		if released {
+			r.notify()
+		}
 		return
 	}
 
@@ -310,10 +349,13 @@ func (r *TaskRunner) advance(task *model.Task) {
 		"from", oldPhase,
 		"to", nextPhase)
 
-	if task.HoldingSlot && !needsDownloadSlot(nextPhase) {
+	if !needsDownloadSlot(nextPhase) {
 		r.releaseSlot(task)
 	}
-	r.enqueue(task)
+	r.mu.Lock()
+	task.State = model.TaskStateIdle
+	r.mu.Unlock()
+	r.notify()
 }
 
 // needsDownloadSlot 判断阶段是否需要下载槽位

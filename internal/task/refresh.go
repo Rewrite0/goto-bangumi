@@ -14,6 +14,7 @@ import (
 )
 
 // RSSRefreshTask RSS 刷新任务
+// 周期性的刷新所有活跃的 rss
 type RSSRefreshTask struct {
 	interval  time.Duration
 	enabled   bool

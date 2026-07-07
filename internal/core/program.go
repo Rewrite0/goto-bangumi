@@ -70,11 +70,11 @@ func (p *Program) Start(ctx context.Context) {
 	// 创建并启动 taskrunner
 	renamer := rename.New(p.db, p.downloader)
 	refresher := refresh.New(p.db)
-	runner := taskrunner.New(4, 5)
-	runner.Register(model.PhaseAdding, handlers.NewAddHandler(p.downloader))                        // 唯一受限阶段（持有流水线槽位）
-	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(p.db, p.downloader))                // 轻量查询
-	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(p.db, p.downloader))       // 轻量轮询
-	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(p.db, renamer))      // 本地文件操作
+	runner := taskrunner.New(8, 4)
+	runner.Register(model.PhaseAdding, handlers.NewAddHandler(p.downloader))                    // 唯一受限阶段（持有流水线槽位）
+	runner.Register(model.PhaseChecking, handlers.NewCheckHandler(p.db, p.downloader))          // 轻量查询
+	runner.Register(model.PhaseDownloading, handlers.NewDownloadingHandler(p.db, p.downloader)) // 轻量轮询
+	runner.Register(model.PhaseRenaming, handlers.NewRenameHandler(p.db, renamer))              // 本地文件操作
 	runner.Start(p.ctx)
 
 	// 启动调度器

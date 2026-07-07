@@ -18,6 +18,7 @@ type Getter interface {
 
 // Feed represents an RSS feed starting from channel level.
 type Feed struct {
+	// TODO: 后续考虑加入对 rss 网址的判断, 判断是 mikan or nyaa or other, 以便后续做不同的处理。
 	Title string `xml:"channel>title"`
 	Link  string `xml:"channel>link"`
 	Items []Item `xml:"channel>item"`
