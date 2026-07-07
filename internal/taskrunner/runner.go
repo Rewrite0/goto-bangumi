@@ -58,9 +58,6 @@ func New(maxConcurrency, maxDownload int) *TaskRunner {
 
 // Register 注册阶段处理器
 func (r *TaskRunner) Register(phase model.TaskPhase, handler PhaseFunc) {
-	if r.handlers == nil {
-		r.handlers = make(map[model.TaskPhase]PhaseFunc)
-	}
 	r.handlers[phase] = handler
 }
 
@@ -109,8 +106,10 @@ func (r *TaskRunner) Submit(task *model.Task) bool {
 		return false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	task.Lock()
 	task.CancelFunc = cancel
 	task.Ctx = ctx
+	task.Unlock()
 	r.tasks[link] = task
 	slog.Debug("[taskrunner] 提交任务", "torrent", task.Torrent.Name)
 	r.notify()
@@ -127,8 +126,7 @@ func (r *TaskRunner) Cancel(link string) {
 		return
 	}
 	task.CancelFunc()
-	released := r.releaseSlotLocked(task)
-	delete(r.tasks, link)
+	released := r.removeTaskLocked(task)
 	if released {
 		r.notify()
 	}
@@ -156,7 +154,7 @@ func (r *TaskRunner) scheduler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-r.signal:
-			r.schedule(ctx)
+			r.schedule()
 		}
 	}
 }
@@ -167,7 +165,7 @@ func (r *TaskRunner) scheduler(ctx context.Context) {
 // 若还有空闲的下载槽位, 就从 tasks 里找一个下载任务来处理
 // 如果上面没有要开始的任务, 就处理一般任务
 // TODO: 任务应该有一个时间限制
-func (r *TaskRunner) schedule(ctx context.Context) {
+func (r *TaskRunner) schedule() {
 	for {
 		// 非阻塞获取并发槽位
 		select {
@@ -216,11 +214,14 @@ func (r *TaskRunner) pickTask(now time.Time) *model.Task {
 
 func (r *TaskRunner) pickTaskLocked(now time.Time, match func(*model.Task) bool) *model.Task {
 	for _, task := range r.tasks {
+		task.Lock()
 		if !isRunnable(task, now) || !match(task) {
+			task.Unlock()
 			continue
 		}
 		task.State = model.TaskStateRunning
 		task.NextPoll = time.Time{}
+		task.Unlock()
 		return task
 	}
 	return nil
@@ -235,16 +236,17 @@ func isRunnable(task *model.Task, now time.Time) bool {
 
 // dispatch 启动 goroutine 执行任务（调用方已持有一个 runningSem 槽位）
 func (r *TaskRunner) dispatch(task *model.Task) {
-	r.mu.Lock()
+	task.Lock()
+	now := time.Now()
 	// 第一次执行任务的时候记录开始时间
 	if task.StartTime.IsZero() {
-		task.StartTime = time.Now()
+		task.StartTime = now
 	}
 	if task.EndTime.IsZero() {
-		task.EndTime = time.Now().Add(r.slotTimeout)
+		task.EndTime = now.Add(r.slotTimeout)
 	}
 	ctx := task.Ctx
-	r.mu.Unlock()
+	task.Unlock()
 
 	r.wg.Go(func() {
 		defer func() {
@@ -259,10 +261,12 @@ func (r *TaskRunner) dispatch(task *model.Task) {
 // 任务当前阶段没有要处理的 handler 就直接推进到下一阶段
 func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 	r.mu.Lock()
+	task.Lock()
 	if r.holdingSlotLocked(task) && time.Now().After(task.EndTime) {
 		name := task.Torrent.Name
 		held := time.Since(task.StartTime)
 		released := r.releaseSlotLocked(task)
+		task.Unlock()
 		r.mu.Unlock()
 		slog.Info("[taskrunner] 下载槽位超时，释放槽位",
 			"torrent", name,
@@ -271,10 +275,14 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 			r.notify()
 		}
 	} else {
+		task.Unlock()
 		r.mu.Unlock()
 	}
 
-	handler := r.handlers[task.CurrentPhase]
+	task.Lock()
+	phase := task.CurrentPhase
+	task.Unlock()
+	handler := r.handlers[phase]
 	if handler == nil {
 		r.advance(task)
 		return
@@ -285,13 +293,14 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 	if result.Err != nil {
 		slog.Error("[taskrunner] 任务失败",
 			"torrent", task.Torrent.Name,
-			"phase", task.CurrentPhase,
+			"phase", phase,
 			"error", result.Err)
 		r.mu.Lock()
+		task.Lock()
 		task.CurrentPhase = model.PhaseFailed
 		task.ErrorMsg = result.Err.Error()
-		released := r.releaseSlotLocked(task)
-		delete(r.tasks, task.Torrent.Link)
+		task.Unlock()
+		released := r.removeTaskLocked(task)
 		r.mu.Unlock()
 		if released {
 			r.notify()
@@ -300,11 +309,11 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 	}
 
 	if result.PollAfter > 0 {
-		r.mu.Lock()
+		task.Lock()
 		task.RetryCount++
 		task.NextPoll = time.Now().Add(result.PollAfter)
 		task.State = model.TaskStateIdle
-		r.mu.Unlock()
+		task.Unlock()
 		// 重试的任务到时间后只唤醒调度器，由调度器扫描 tasks 决定是否可运行。
 		time.AfterFunc(result.PollAfter, func() {
 			select {
@@ -322,6 +331,8 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 // advance 推进到下一阶段
 // 现在是按阶段推进, 后序再考虑阶段跳转的情况
 func (r *TaskRunner) advance(task *model.Task) {
+	r.mu.Lock()
+	task.Lock()
 	oldPhase := task.CurrentPhase
 	nextPhase := oldPhase + 1
 	// FAIL->END, COMPLETED->END
@@ -333,9 +344,8 @@ func (r *TaskRunner) advance(task *model.Task) {
 	task.NextPoll = time.Time{}
 
 	if nextPhase == model.PhaseEnd {
-		r.mu.Lock()
-		released := r.releaseSlotLocked(task)
-		delete(r.tasks, task.Torrent.Link)
+		released := r.removeTaskLocked(task)
+		task.Unlock()
 		r.mu.Unlock()
 		slog.Debug("[taskrunner] 任务完成", "torrent", task.Torrent.Name)
 		if released {
@@ -344,18 +354,28 @@ func (r *TaskRunner) advance(task *model.Task) {
 		return
 	}
 
+	released := false
+	if !needsDownloadSlot(nextPhase) {
+		released = r.releaseSlotLocked(task)
+	}
+	task.State = model.TaskStateIdle
+	task.Unlock()
+	r.mu.Unlock()
+
 	slog.Debug("[taskrunner] 阶段变更",
 		"torrent", task.Torrent.Name,
 		"from", oldPhase,
 		"to", nextPhase)
-
-	if !needsDownloadSlot(nextPhase) {
-		r.releaseSlot(task)
+	if released {
+		r.notify()
 	}
-	r.mu.Lock()
-	task.State = model.TaskStateIdle
-	r.mu.Unlock()
 	r.notify()
+}
+
+func (r *TaskRunner) removeTaskLocked(task *model.Task) bool {
+	released := r.releaseSlotLocked(task)
+	delete(r.tasks, task.Torrent.Link)
+	return released
 }
 
 // needsDownloadSlot 判断阶段是否需要下载槽位

@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -56,6 +57,8 @@ func (p TaskPhase) IsTerminal() bool {
 
 // Task 下载任务
 type Task struct {
+	sync.Mutex
+
 	CurrentPhase TaskPhase
 	State        TaskState
 
