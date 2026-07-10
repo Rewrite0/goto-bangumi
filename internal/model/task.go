@@ -22,11 +22,12 @@ const (
 type TaskState int
 
 const (
-	// 初次创建任务时的状态
-	TaskStateCreated   TaskState = iota // 创建
-	TaskStateIdle                       // 空闲
-	TaskStateRunning                    // 运行中
-	TaskStateCompleted                  // 完成
+	TaskStateCreated   TaskState = iota // 已创建，尚未执行
+	TaskStateReady                      // 当前可以执行，等待 scheduler 调度
+	TaskStateWaiting                    // 等待 PollAfter 到期
+	TaskStateQueued                     // 已被 scheduler 选中，等待 worker 开始
+	TaskStateRunning                    // worker 正在执行 handler
+	TaskStateCompleted                  // 已结束，不再调度
 )
 
 func (p TaskPhase) String() string {
@@ -62,14 +63,14 @@ type Task struct {
 	CurrentPhase TaskPhase
 	State        TaskState
 
-	RetryCount int             // 当前阶段的重试次数（PollAfter 时自增，advance 时重置）,由 handler 自己判断是否该停止重试
+	RetryCount int             // 当前阶段的可重试错误次数，由 handler 维护，advance 时重置
 	Ctx        context.Context // 当前阶段的上下文（如果有）
 	CancelFunc func()          // 取消当前阶段的上下文（如果有）
 
 	// 业务数据
 	Guids     []string  // 可能的 hash 列表
 	StartTime time.Time // 开始下载时间（用于超时判断）
-	NextPoll  time.Time // 下一次轮询时间（用于调度）
+	NextPoll  time.Time // Waiting 状态的预计唤醒时间
 	EndTime   time.Time // 结束时间（成功或失败）
 	ErrorMsg  string
 

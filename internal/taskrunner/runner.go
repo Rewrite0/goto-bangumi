@@ -17,22 +17,45 @@ import (
 调度优先看有下载槽位的任务，如果都在休息，就看一般任务
 每个任务可以被单独取消，删除所有的调度
 任务超时失败的任务也不再处理
+
+Task 并发模型
+1. scheduler 只有一个 goroutine，但 dispatch 出的不同任务可以在 maxConcurrency 限制下并行执行。
+2. 同一个 Task 同一时间最多执行一个 handler。scheduler 选中任务时把状态改为 Queued，worker 开始时
+   改为 Running；阶段可以继续时恢复为 Ready，需要延迟轮询时进入 Waiting。
+3. Submit、Cancel、handler 完成和轮询定时唤醒可能来自不同 goroutine。tasks 和 downloadSlots
+   必须始终在 r.mu 下访问。
+4. Task 自身的调度字段由 task.Mutex 保护；同时需要 r.mu 和 task.Mutex 时，固定先获取 r.mu，
+   再获取 task.Mutex，避免锁顺序反转。
+5. handler 运行期间独占当前 Task，可以直接更新业务字段；其他 goroutine 若要访问同一个 Task，
+   必须使用 task.Mutex。Task 引用的 Torrent、Bangumi 不会因为锁住 Task 自动获得并发保护。
+6. Cancel 可以和 handler 同时发生：CancelFunc 可以并发调用，但 handler 可能在收到取消后继续收尾。
+   当前 tasks 和 downloadSlots 都以 link 为 key；旧 handler 退出前若提交了相同 link 的新 Task，
+   因此清理时必须校验 Task 对象身份，不能只按 link 删除。
+7. PollAfter 使任务进入 Waiting；定时回调校验 Task 对象身份后把任务改为 Ready，再唤醒 scheduler。
+8. 任务状态转换说明：
+Created: 初次提交，未被调度
+Ready: 当前可以执行，等待 scheduler 调度
+Waiting: 等待 PollAfter 到期
+Queued: 已被调度，等待 worker 执行
+Running: worker 正在执行 handler
+Completed: 已结束，不再调度
 */
 
 // TaskRunner 任务执行器
 type TaskRunner struct {
 	handlers map[model.TaskPhase]PhaseFunc
 
-	// tasks map 的保护锁
+	// 保护 tasks 和 downloadSlots。
+	// 同时需要锁 Task 时，固定先获取 mu，再获取 task.Mutex。
 	mu    sync.Mutex
 	tasks map[string]*model.Task
 
 	// channel 信号量：len = 当前运行数，cap = 上限
 	runningSem chan struct{}
 
-	// 下载槽位由 scheduler 集中分配，key 为 task.Torrent.Link
+	// 下载槽位由 scheduler 集中分配，key 为 task.Torrent.Link，value 用于区分同 link 的新旧任务。
 	maxDownload   int
-	downloadSlots map[string]struct{}
+	downloadSlots map[string]*model.Task
 	slotTimeout   time.Duration
 
 	// 控制
@@ -50,7 +73,7 @@ func New(maxConcurrency, maxDownload int) *TaskRunner {
 		tasks:         make(map[string]*model.Task),
 		runningSem:    make(chan struct{}, maxConcurrency),
 		maxDownload:   maxDownload,
-		downloadSlots: make(map[string]struct{}),
+		downloadSlots: make(map[string]*model.Task),
 		slotTimeout:   10 * time.Minute,
 		signal:        make(chan struct{}, 1),
 	}
@@ -69,30 +92,16 @@ func (r *TaskRunner) notify() {
 	}
 }
 
-// releaseSlot 释放下载槽位
-// 释放后通知调度一次
-// 在取消，阶段转换下都有可能调用
-func (r *TaskRunner) releaseSlot(task *model.Task) {
-	r.mu.Lock()
-	released := r.releaseSlotLocked(task)
-	r.mu.Unlock()
-	if released {
-		r.notify()
-	}
-}
-
-func (r *TaskRunner) releaseSlotLocked(task *model.Task) bool {
+func (r *TaskRunner) releaseSlotLocked(task *model.Task) {
 	link := task.Torrent.Link
-	if _, ok := r.downloadSlots[link]; !ok {
-		return false
+	if r.downloadSlots[link] != task {
+		return
 	}
 	delete(r.downloadSlots, link)
-	return true
 }
 
 func (r *TaskRunner) holdingSlotLocked(task *model.Task) bool {
-	_, ok := r.downloadSlots[task.Torrent.Link]
-	return ok
+	return r.downloadSlots[task.Torrent.Link] == task
 }
 
 // Submit 提交任务
@@ -119,17 +128,21 @@ func (r *TaskRunner) Submit(task *model.Task) bool {
 // Cancel 取消任务
 func (r *TaskRunner) Cancel(link string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	task, ok := r.tasks[link]
 	if !ok {
+		r.mu.Unlock()
 		slog.Debug("[taskrunner] 取消任务失败，任务不存在", "link", link)
 		return
 	}
-	task.CancelFunc()
-	released := r.removeTaskLocked(task)
-	if released {
-		r.notify()
-	}
+	task.Lock()
+	task.State = model.TaskStateCompleted
+	cancel := task.CancelFunc
+	task.Unlock()
+	r.removeTaskLocked(task)
+	r.mu.Unlock()
+
+	cancel()
+	r.notify()
 }
 
 // Start 启动 scheduler
@@ -161,7 +174,7 @@ func (r *TaskRunner) scheduler(ctx context.Context) {
 
 // schedule 尝试尽可能多地调度任务, 除非没有可调度的任务了,不然会一直调度下去
 // 先看看正在下载的任务, 有没有要处理的
-// 调度的原则是优先处理有下载槽位的任务(要求满足时间)
+// 调度的原则是优先处理有下载槽位且处于可运行状态的任务
 // 若还有空闲的下载槽位, 就从 tasks 里找一个下载任务来处理
 // 如果上面没有要开始的任务, 就处理一般任务
 // TODO: 任务应该有一个时间限制
@@ -173,7 +186,7 @@ func (r *TaskRunner) schedule() {
 		default:
 			return
 		}
-		task := r.pickTask(time.Now())
+		task := r.pickTask()
 		if task == nil {
 			// 到这说明没有可调度的任务了，释放之前占用的并发槽位
 			<-r.runningSem
@@ -183,12 +196,12 @@ func (r *TaskRunner) schedule() {
 	}
 }
 
-func (r *TaskRunner) pickTask(now time.Time) *model.Task {
+func (r *TaskRunner) pickTask() *model.Task {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	// 先取一个正在下载槽位的任务，优先处理它们。
-	task := r.pickTaskLocked(now, func(task *model.Task) bool {
+	task := r.pickTaskLocked(func(task *model.Task) bool {
 		return r.holdingSlotLocked(task)
 	})
 	if task != nil {
@@ -197,62 +210,65 @@ func (r *TaskRunner) pickTask(now time.Time) *model.Task {
 
 	// 取一个下载槽位给还没进入下载流水线的任务。
 	if len(r.downloadSlots) < r.maxDownload {
-		task = r.pickTaskLocked(now, func(task *model.Task) bool {
-			return needsDownloadSlot(task.CurrentPhase) && !r.holdingSlotLocked(task)
+		task = r.pickTaskLocked(func(task *model.Task) bool {
+			return needsDownloadSlot(task.CurrentPhase)
 		})
 		if task != nil {
-			r.downloadSlots[task.Torrent.Link] = struct{}{}
+			r.downloadSlots[task.Torrent.Link] = task
 			return task
 		}
-		// 到这说明下载槽位满了，先处理一般任务。
+		// 没有可运行的新下载任务，继续处理一般任务。
 	}
 
-	return r.pickTaskLocked(now, func(task *model.Task) bool {
+	return r.pickTaskLocked(func(task *model.Task) bool {
 		return !needsDownloadSlot(task.CurrentPhase)
 	})
 }
 
-func (r *TaskRunner) pickTaskLocked(now time.Time, match func(*model.Task) bool) *model.Task {
+func (r *TaskRunner) pickTaskLocked(match func(*model.Task) bool) *model.Task {
 	for _, task := range r.tasks {
 		task.Lock()
-		if !isRunnable(task, now) || !match(task) {
+		if (task.State != model.TaskStateCreated && task.State != model.TaskStateReady) || !match(task) {
 			task.Unlock()
 			continue
 		}
-		task.State = model.TaskStateRunning
-		task.NextPoll = time.Time{}
+		task.State = model.TaskStateQueued
 		task.Unlock()
 		return task
 	}
 	return nil
 }
 
-func isRunnable(task *model.Task, now time.Time) bool {
-	if task.State != model.TaskStateCreated && task.State != model.TaskStateIdle {
-		return false
-	}
-	return task.NextPoll.IsZero() || !now.Before(task.NextPoll)
-}
-
 // dispatch 启动 goroutine 执行任务（调用方已持有一个 runningSem 槽位）
 func (r *TaskRunner) dispatch(task *model.Task) {
-	task.Lock()
-	now := time.Now()
-	// 第一次执行任务的时候记录开始时间
-	if task.StartTime.IsZero() {
-		task.StartTime = now
-	}
-	if task.EndTime.IsZero() {
-		task.EndTime = now.Add(r.slotTimeout)
-	}
-	ctx := task.Ctx
-	task.Unlock()
-
 	r.wg.Go(func() {
 		defer func() {
 			<-r.runningSem
+			task.Lock()
+			if task.State == model.TaskStateRunning {
+				task.State = model.TaskStateReady
+			}
+			task.Unlock()
 			r.notify()
 		}()
+
+		task.Lock()
+		if task.State != model.TaskStateQueued {
+			task.Unlock()
+			return
+		}
+		now := time.Now()
+		// 第一次执行任务的时候记录开始时间
+		if task.StartTime.IsZero() {
+			task.StartTime = now
+		}
+		if task.EndTime.IsZero() {
+			task.EndTime = now.Add(r.slotTimeout)
+		}
+		ctx := task.Ctx
+		task.State = model.TaskStateRunning
+		task.Unlock()
+
 		r.process(ctx, task)
 	})
 }
@@ -262,21 +278,20 @@ func (r *TaskRunner) dispatch(task *model.Task) {
 func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 	r.mu.Lock()
 	task.Lock()
-	if r.holdingSlotLocked(task) && time.Now().After(task.EndTime) {
-		name := task.Torrent.Name
-		held := time.Since(task.StartTime)
-		released := r.releaseSlotLocked(task)
-		task.Unlock()
-		r.mu.Unlock()
+	slotExpired := r.holdingSlotLocked(task) && time.Now().After(task.EndTime)
+	var name string
+	var held time.Duration
+	if slotExpired {
+		name = task.Torrent.Name
+		held = time.Since(task.StartTime)
+		r.releaseSlotLocked(task)
+	}
+	task.Unlock()
+	r.mu.Unlock()
+	if slotExpired {
 		slog.Info("[taskrunner] 下载槽位超时，释放槽位",
 			"torrent", name,
 			"held", held)
-		if released {
-			r.notify()
-		}
-	} else {
-		task.Unlock()
-		r.mu.Unlock()
 	}
 
 	task.Lock()
@@ -298,30 +313,31 @@ func (r *TaskRunner) process(ctx context.Context, task *model.Task) {
 		r.mu.Lock()
 		task.Lock()
 		task.CurrentPhase = model.PhaseFailed
+		task.State = model.TaskStateCompleted
 		task.ErrorMsg = result.Err.Error()
 		task.Unlock()
-		released := r.removeTaskLocked(task)
+		r.removeTaskLocked(task)
 		r.mu.Unlock()
-		if released {
-			r.notify()
-		}
 		return
 	}
 
 	if result.PollAfter > 0 {
+		r.mu.Lock()
 		task.Lock()
-		task.RetryCount++
+		if r.tasks[task.Torrent.Link] != task || task.State != model.TaskStateRunning {
+			task.Unlock()
+			r.mu.Unlock()
+			return
+		}
 		task.NextPoll = time.Now().Add(result.PollAfter)
-		task.State = model.TaskStateIdle
+		task.State = model.TaskStateWaiting
 		task.Unlock()
-		// 重试的任务到时间后只唤醒调度器，由调度器扫描 tasks 决定是否可运行。
+		r.mu.Unlock()
+		// 到期后将仍在等待的同一个 Task 转为 Ready，再唤醒 scheduler。
 		time.AfterFunc(result.PollAfter, func() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
+			if r.makeTaskReady(task) {
+				r.notify()
 			}
-			r.notify()
 		})
 		return
 	}
@@ -344,21 +360,17 @@ func (r *TaskRunner) advance(task *model.Task) {
 	task.NextPoll = time.Time{}
 
 	if nextPhase == model.PhaseEnd {
-		released := r.removeTaskLocked(task)
+		task.State = model.TaskStateCompleted
+		r.removeTaskLocked(task)
 		task.Unlock()
 		r.mu.Unlock()
 		slog.Debug("[taskrunner] 任务完成", "torrent", task.Torrent.Name)
-		if released {
-			r.notify()
-		}
 		return
 	}
 
-	released := false
 	if !needsDownloadSlot(nextPhase) {
-		released = r.releaseSlotLocked(task)
+		r.releaseSlotLocked(task)
 	}
-	task.State = model.TaskStateIdle
 	task.Unlock()
 	r.mu.Unlock()
 
@@ -366,16 +378,32 @@ func (r *TaskRunner) advance(task *model.Task) {
 		"torrent", task.Torrent.Name,
 		"from", oldPhase,
 		"to", nextPhase)
-	if released {
-		r.notify()
-	}
-	r.notify()
 }
 
-func (r *TaskRunner) removeTaskLocked(task *model.Task) bool {
-	released := r.releaseSlotLocked(task)
-	delete(r.tasks, task.Torrent.Link)
-	return released
+// makeTaskReady 将到期的等待任务转为 Ready。
+func (r *TaskRunner) makeTaskReady(task *model.Task) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	link := task.Torrent.Link
+	if r.tasks[link] != task {
+		return false
+	}
+	task.Lock()
+	defer task.Unlock()
+	if task.State != model.TaskStateWaiting {
+		return false
+	}
+	task.State = model.TaskStateReady
+	task.NextPoll = time.Time{}
+	return true
+}
+
+func (r *TaskRunner) removeTaskLocked(task *model.Task) {
+	link := task.Torrent.Link
+	r.releaseSlotLocked(task)
+	if r.tasks[link] == task {
+		delete(r.tasks, link)
+	}
 }
 
 // needsDownloadSlot 判断阶段是否需要下载槽位
