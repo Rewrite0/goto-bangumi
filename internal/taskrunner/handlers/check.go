@@ -22,8 +22,10 @@ func NewCheckHandler(db *database.DB, dl *download.DownloadClient) taskrunner.Ph
 			if err != nil {
 				if apperrors.IsKeyError(err) {
 					continue
-				}else if apperrors.IsNetworkError(err) {
-					return taskrunner.PhaseResult{Err: err, PollAfter: time.Duration(30) * time.Second}
+				}
+				if apperrors.IsNetworkError(err) {
+					slog.Warn("[check handler] 检查下载失败，稍后重试", "error", err)
+					return taskrunner.PhaseResult{PollAfter: 30 * time.Second}
 				}
 				slog.Error("[check handler] 检查下载失败", "error", err)
 				return taskrunner.PhaseResult{Err: err}
